@@ -7,11 +7,13 @@ import (
 	"errors"
 	"math"
 	"sort"
+	"sync"
 
 	"github.com/prometheus/prometheus/prompb"
 )
 
 type batchTimeSeriesState struct {
+	rwMutex sync.Mutex
 	// Track batch sizes sent to avoid over allocating huge buffers.
 	// This helps in the case where large batches are sent to avoid allocating too much unused memory
 	nextTimeSeriesBufferSize     int
@@ -24,6 +26,7 @@ func newBatchTimeSericesState() batchTimeSeriesState {
 		nextTimeSeriesBufferSize:     math.MaxInt,
 		nextMetricMetadataBufferSize: math.MaxInt,
 		nextRequestBufferSize:        0,
+		rwMutex:                      sync.Mutex{},
 	}
 }
 
@@ -34,10 +37,14 @@ func batchTimeSeries(tsMap map[string]*prompb.TimeSeries, maxBatchByteSize int, 
 	}
 
 	// Allocate a buffer size of at least 10, or twice the last # of requests we sent
+	state.rwMutex.Lock()
 	requests := make([]*prompb.WriteRequest, 0, max(10, state.nextRequestBufferSize))
+	state.rwMutex.Unlock()
 
 	// Allocate a time series buffer 2x the last time series batch size or the length of the input if smaller
+	state.rwMutex.Lock()
 	tsArray := make([]prompb.TimeSeries, 0, min(state.nextTimeSeriesBufferSize, len(tsMap)))
+	state.rwMutex.Unlock()
 	sizeOfCurrentBatch := 0
 
 	i := 0
@@ -45,11 +52,15 @@ func batchTimeSeries(tsMap map[string]*prompb.TimeSeries, maxBatchByteSize int, 
 		sizeOfSeries := v.Size()
 
 		if sizeOfCurrentBatch+sizeOfSeries >= maxBatchByteSize {
+			state.rwMutex.Lock()
 			state.nextTimeSeriesBufferSize = max(10, 2*len(tsArray))
+			state.rwMutex.Unlock()
 			wrapped := convertTimeseriesToRequest(tsArray)
 			requests = append(requests, wrapped)
 
+			state.rwMutex.Lock()
 			tsArray = make([]prompb.TimeSeries, 0, min(state.nextTimeSeriesBufferSize, len(tsMap)-i))
+			state.rwMutex.Unlock()
 			sizeOfCurrentBatch = 0
 		}
 
@@ -64,18 +75,24 @@ func batchTimeSeries(tsMap map[string]*prompb.TimeSeries, maxBatchByteSize int, 
 	}
 
 	// Allocate a metric metadata buffer 2x the last metric metadata batch size or the length of the input if smaller
+	state.rwMutex.Lock()
 	mArray := make([]prompb.MetricMetadata, 0, min(state.nextMetricMetadataBufferSize, len(m)))
+	state.rwMutex.Unlock()
 	sizeOfCurrentBatch = 0
 	i = 0
 	for _, v := range m {
 		sizeOfM := v.Size()
 
 		if sizeOfCurrentBatch+sizeOfM >= maxBatchByteSize {
+			state.rwMutex.Lock()
 			state.nextMetricMetadataBufferSize = max(10, 2*len(mArray))
+			state.rwMutex.Unlock()
 			wrapped := convertMetadataToRequest(mArray)
 			requests = append(requests, wrapped)
 
+			state.rwMutex.Lock()
 			mArray = make([]prompb.MetricMetadata, 0, min(state.nextMetricMetadataBufferSize, len(m)-i))
+			state.rwMutex.Unlock()
 			sizeOfCurrentBatch = 0
 		}
 
@@ -89,7 +106,9 @@ func batchTimeSeries(tsMap map[string]*prompb.TimeSeries, maxBatchByteSize int, 
 		requests = append(requests, wrapped)
 	}
 
+	state.rwMutex.Lock()
 	state.nextRequestBufferSize = 2 * len(requests)
+	state.rwMutex.Unlock()
 	return requests, nil
 }
 
