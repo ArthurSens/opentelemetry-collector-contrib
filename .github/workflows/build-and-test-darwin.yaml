@@ -82,6 +82,13 @@ jobs:
         run: unzip testbinaries.zip
       - name: Run Unit Tests
         run: make -j2 gorunbuilttest GROUP=cgo
+      - name: Run Unit Tests With JUnit and Coverage
+        run: make gotest-with-junit-and-cover GROUP=cgo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ runner.os }}
+          path: internal/tools/testresults/
+          retention-days: 4
   darwin-unittest:
     if: ${{ github.actor != 'dependabot[bot]' && (contains(github.event.pull_request.labels.*.name, 'Run Darwin') || github.event_name == 'push' || github.event_name == 'merge_group') }}
     runs-on: macos-latest

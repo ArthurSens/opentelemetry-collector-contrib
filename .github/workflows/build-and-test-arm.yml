@@ -68,6 +68,13 @@ jobs:
         run: make install-tools
       - name: Run Unit Tests
         run: make -j2 gotest GROUP=${{ matrix.group }}
+      - name: Run Unit Tests With JUnit and Coverage
+        run: make gotest-with-junit-and-cover GROUP=${{ matrix.group }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ runner.os }}-${{ matrix.group }}
+          path: internal/tools/testresults/
+          retention-days: 4
   arm-unittest:
     if: ${{ github.actor != 'dependabot[bot]' && (contains(github.event.pull_request.labels.*.name, 'Run ARM') || github.event_name == 'push' || github.event_name == 'merge_group') }}
     runs-on: ubuntu-24.04
