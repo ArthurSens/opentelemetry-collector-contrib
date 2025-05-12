@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -35,6 +36,12 @@ var removeStartTimeAdjustment = featuregate.GlobalRegistry().MustRegister(
 	featuregate.StageAlpha,
 	featuregate.WithRegisterDescription("When enabled, the Prometheus receiver will"+
 		" leave the start time unset. Use the new metricstarttime processor instead."),
+)
+
+const (
+	scopeNameLabelKey      = "otel_scope_name"
+	scopeVersionLabelKey   = "otel_scope_version"
+	scopeSchemaURLLabelKey = "otel_scope_schema_url"
 )
 
 type resourceKey struct {
@@ -74,8 +81,10 @@ type transaction struct {
 var emptyScopeID scopeID
 
 type scopeID struct {
-	name    string
-	version string
+	name       string
+	version    string
+	schema     string
+	attributes pcommon.Map
 }
 
 func newTransaction(
@@ -164,13 +173,7 @@ func (t *transaction) Append(_ storage.SeriesRef, ls labels.Labels, atMs int64, 
 		return 0, nil
 	}
 
-	// For the `otel_scope_info` metric we need to convert it to scope attributes.
-	if metricName == prometheus.ScopeInfoMetricName {
-		t.addScopeInfo(*rKey, ls)
-		return 0, nil
-	}
-
-	scope := getScopeID(ls)
+	scope := t.getScopeID(*rKey, ls)
 
 	if t.enableNativeHistograms && value.IsStaleNaN(val) {
 		if t.detectAndStoreNativeHistogramStaleness(atMs, rKey, scope, metricName, ls) {
@@ -472,11 +475,23 @@ func (t *transaction) getMetrics() (pmetric.Metrics, error) {
 func getScopeID(ls labels.Labels) scopeID {
 	var scope scopeID
 	ls.Range(func(lbl labels.Label) {
-		if lbl.Name == prometheus.ScopeNameLabelKey {
-			scope.name = lbl.Value
+		if lbl.Name == model.JobLabel || lbl.Name == model.InstanceLabel || lbl.Name == model.MetricNameLabel {
+			return
 		}
-		if lbl.Name == prometheus.ScopeVersionLabelKey {
+		if lbl.Name == scopeNameLabelKey {
+			scope.name = lbl.Value
+			return
+		}
+		if lbl.Name == scopeVersionLabelKey {
 			scope.version = lbl.Value
+			return
+		}
+		if lbl.Name == scopeSchemaURLLabelKey {
+			scope.schema = lbl.Value
+			return
+		}
+		if strings.HasPrefix(lbl.Name, "otel_scope_") {
+			scope.attributes.PutStr(lbl.Name, lbl.Value)
 		}
 	})
 	return scope
@@ -587,28 +602,14 @@ func (t *transaction) AddTargetInfo(key resourceKey, ls labels.Labels) {
 	}
 }
 
-func (t *transaction) addScopeInfo(key resourceKey, ls labels.Labels) {
+func (t *transaction) getScopeID(key resourceKey, ls labels.Labels) scopeID {
 	t.addingNativeHistogram = false
-	attrs := pcommon.NewMap()
-	scope := scopeID{}
-	ls.Range(func(lbl labels.Label) {
-		if lbl.Name == model.JobLabel || lbl.Name == model.InstanceLabel || lbl.Name == model.MetricNameLabel {
-			return
-		}
-		if lbl.Name == prometheus.ScopeNameLabelKey {
-			scope.name = lbl.Value
-			return
-		}
-		if lbl.Name == prometheus.ScopeVersionLabelKey {
-			scope.version = lbl.Value
-			return
-		}
-		attrs.PutStr(lbl.Name, lbl.Value)
-	})
+	scope := getScopeID(ls)
 	if _, ok := t.scopeAttributes[key]; !ok {
 		t.scopeAttributes[key] = make(map[scopeID]pcommon.Map)
 	}
-	t.scopeAttributes[key][scope] = attrs
+	t.scopeAttributes[key][scope] = scope.attributes
+	return scope
 }
 
 func getSeriesRef(bytes []byte, ls labels.Labels, mtype pmetric.MetricType) (uint64, []byte) {
