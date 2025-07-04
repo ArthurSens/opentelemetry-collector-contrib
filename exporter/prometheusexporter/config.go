@@ -17,10 +17,17 @@ import (
 type TranslationStrategy string
 
 const (
-	// TranslationStrategyPreserveOTel preserves the original OpenTelemetry metric names
-	TranslationStrategyPreserveOTel TranslationStrategy = "preserve_otel"
-	// TranslationStrategyPrometheusCompliant translates metric names to be Prometheus compliant (adds suffixes)
-	TranslationStrategyPrometheusCompliant TranslationStrategy = "prometheus_compliant"
+	// TranslationStrategyUnderscoreEscapingWithSuffixes fully escapes metric names for classic Prometheus 
+	// metric name compatibility, and includes appending type and unit suffixes. This is the default.
+	TranslationStrategyUnderscoreEscapingWithSuffixes TranslationStrategy = "UnderscoreEscapingWithSuffixes"
+	
+	// TranslationStrategyNoUTF8EscapingWithSuffixes disables changing special characters to `_`. 
+	// Special suffixes like units and `_total` for counters will be attached.
+	TranslationStrategyNoUTF8EscapingWithSuffixes TranslationStrategy = "NoUTF8EscapingWithSuffixes"
+	
+	// TranslationStrategyNoTranslation bypasses all metric and label name translation, 
+	// passing them through unaltered.
+	TranslationStrategyNoTranslation TranslationStrategy = "NoTranslation"
 )
 
 // Config defines configuration for Prometheus exporter.
@@ -46,9 +53,10 @@ type Config struct {
 	EnableOpenMetrics bool `mapstructure:"enable_open_metrics"`
 
 	// TranslationStrategy defines how OpenTelemetry metrics are translated to Prometheus format.
-	// - "preserve_otel": Preserves the original OpenTelemetry metric names (equivalent to add_metric_suffixes=false)
-	// - "prometheus_compliant": Translates metric names to be Prometheus compliant by adding type and unit suffixes (equivalent to add_metric_suffixes=true)
-	// Defaults to "prometheus_compliant" for backward compatibility.
+	// - "UnderscoreEscapingWithSuffixes": (default) Fully escapes metric names for classic Prometheus compatibility and adds type/unit suffixes
+	// - "NoUTF8EscapingWithSuffixes": Disables UTF-8 character escaping but still adds type/unit suffixes  
+	// - "NoTranslation": Bypasses all metric and label name translation
+	// Defaults to "UnderscoreEscapingWithSuffixes" for backward compatibility.
 	TranslationStrategy TranslationStrategy `mapstructure:"translation_strategy"`
 
 	// AddMetricSuffixes controls whether suffixes are added to metric names. Defaults to true.
@@ -67,7 +75,7 @@ func (cfg *Config) Validate() error {
 // GetTranslationStrategy returns the effective translation strategy.
 // If TranslationStrategy is set, it takes precedence over the deprecated AddMetricSuffixes field.
 // If only AddMetricSuffixes is set, it is used for backward compatibility.
-// If neither is set, defaults to prometheus_compliant for backward compatibility.
+// If neither is set, defaults to UnderscoreEscapingWithSuffixes for backward compatibility.
 func (cfg *Config) GetTranslationStrategy() TranslationStrategy {
 	// If TranslationStrategy is explicitly set, use it
 	if cfg.TranslationStrategy != "" {
@@ -76,13 +84,13 @@ func (cfg *Config) GetTranslationStrategy() TranslationStrategy {
 	
 	// Fall back to AddMetricSuffixes for backward compatibility
 	if cfg.AddMetricSuffixes {
-		return TranslationStrategyPrometheusCompliant
+		return TranslationStrategyUnderscoreEscapingWithSuffixes
 	}
-	return TranslationStrategyPreserveOTel
+	return TranslationStrategyNoTranslation
 }
 
 // ShouldAddMetricSuffixes returns true if metric suffixes should be added based on the translation strategy
 func (cfg *Config) ShouldAddMetricSuffixes() bool {
 	strategy := cfg.GetTranslationStrategy()
-	return strategy == TranslationStrategyPrometheusCompliant
+	return strategy == TranslationStrategyUnderscoreEscapingWithSuffixes || strategy == TranslationStrategyNoUTF8EscapingWithSuffixes
 }

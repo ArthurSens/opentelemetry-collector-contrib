@@ -49,8 +49,8 @@ func createMetricsExporter(
 			set.Logger.Warn(
 				"The 'add_metric_suffixes' configuration option is deprecated. " +
 				"Please use 'translation_strategy' instead. " +
-				"Use 'translation_strategy: preserve_otel' for add_metric_suffixes: false, " +
-				"or 'translation_strategy: prometheus_compliant' for add_metric_suffixes: true.",
+				"Use 'translation_strategy: NoTranslation' for add_metric_suffixes: false, " +
+				"or 'translation_strategy: UnderscoreEscapingWithSuffixes' for add_metric_suffixes: true.",
 			)
 		}
 	}

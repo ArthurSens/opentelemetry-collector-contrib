@@ -15,7 +15,7 @@ prometheus/2:
 prometheus/3:
   endpoint: "1.2.3.4:1235"
   namespace: test-space-new
-  translation_strategy: preserve_otel
+  translation_strategy: NoTranslation
   const_labels:
     label1: value1
   send_timestamps: true

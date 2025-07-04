@@ -68,7 +68,7 @@ func TestLoadConfig(t *testing.T) {
 				},
 				SendTimestamps:      true,
 				MetricExpiration:    90 * time.Minute,
-				TranslationStrategy: TranslationStrategyPreserveOTel,
+				TranslationStrategy: TranslationStrategyNoTranslation,
 			},
 		},
 	}
@@ -98,30 +98,39 @@ func TestTranslationStrategy(t *testing.T) {
 		expectedShouldAddSuffix bool
 	}{
 		{
-			name: "default config should use prometheus_compliant",
+			name: "default config should use UnderscoreEscapingWithSuffixes",
 			config: Config{
-				TranslationStrategy: TranslationStrategyPrometheusCompliant,
+				TranslationStrategy: TranslationStrategyUnderscoreEscapingWithSuffixes,
 				AddMetricSuffixes:   true,
 			},
-			expectedStrategy:        TranslationStrategyPrometheusCompliant,
+			expectedStrategy:        TranslationStrategyUnderscoreEscapingWithSuffixes,
 			expectedShouldAddSuffix: true,
 		},
 		{
-			name: "preserve_otel strategy",
+			name: "NoTranslation strategy",
 			config: Config{
-				TranslationStrategy: TranslationStrategyPreserveOTel,
+				TranslationStrategy: TranslationStrategyNoTranslation,
 				AddMetricSuffixes:   true, // Should be ignored
 			},
-			expectedStrategy:        TranslationStrategyPreserveOTel,
+			expectedStrategy:        TranslationStrategyNoTranslation,
 			expectedShouldAddSuffix: false,
 		},
 		{
-			name: "prometheus_compliant strategy",
+			name: "NoUTF8EscapingWithSuffixes strategy",
 			config: Config{
-				TranslationStrategy: TranslationStrategyPrometheusCompliant,
+				TranslationStrategy: TranslationStrategyNoUTF8EscapingWithSuffixes,
 				AddMetricSuffixes:   false, // Should be ignored
 			},
-			expectedStrategy:        TranslationStrategyPrometheusCompliant,
+			expectedStrategy:        TranslationStrategyNoUTF8EscapingWithSuffixes,
+			expectedShouldAddSuffix: true,
+		},
+		{
+			name: "UnderscoreEscapingWithSuffixes strategy",
+			config: Config{
+				TranslationStrategy: TranslationStrategyUnderscoreEscapingWithSuffixes,
+				AddMetricSuffixes:   false, // Should be ignored
+			},
+			expectedStrategy:        TranslationStrategyUnderscoreEscapingWithSuffixes,
 			expectedShouldAddSuffix: true,
 		},
 		{
@@ -130,7 +139,7 @@ func TestTranslationStrategy(t *testing.T) {
 				// TranslationStrategy not set
 				AddMetricSuffixes: true,
 			},
-			expectedStrategy:        TranslationStrategyPrometheusCompliant,
+			expectedStrategy:        TranslationStrategyUnderscoreEscapingWithSuffixes,
 			expectedShouldAddSuffix: true,
 		},
 		{
@@ -139,15 +148,15 @@ func TestTranslationStrategy(t *testing.T) {
 				// TranslationStrategy not set
 				AddMetricSuffixes: false,
 			},
-			expectedStrategy:        TranslationStrategyPreserveOTel,
+			expectedStrategy:        TranslationStrategyNoTranslation,
 			expectedShouldAddSuffix: false,
 		},
 		{
-			name: "empty config defaults to preserve_otel for backward compatibility with AddMetricSuffixes=false",
+			name: "empty config defaults to NoTranslation for backward compatibility with AddMetricSuffixes=false",
 			config: Config{
 				// Both fields empty/default
 			},
-			expectedStrategy:        TranslationStrategyPreserveOTel,
+			expectedStrategy:        TranslationStrategyNoTranslation,
 			expectedShouldAddSuffix: false,
 		},
 	}
