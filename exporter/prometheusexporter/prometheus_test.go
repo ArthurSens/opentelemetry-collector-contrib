@@ -479,3 +479,214 @@ func metricBuilder(delta int64, prefix, job, instance string) pmetric.Metrics {
 
 	return md
 }
+
+// TestPrometheusExporter_TranslationStrategies tests that the different translation strategies
+// are properly configured and that the ShouldAddMetricSuffixes method works correctly.
+// NOTE: The actual metric name translation logic implementation in the core Prometheus translator
+// is beyond the scope of this configuration change. This test validates that:
+// 1. Different translation strategies can be configured
+// 2. The ShouldAddMetricSuffixes method returns the correct values
+// 3. The exporter can be created and started with different strategies
+// 4. Metrics are exported (even if translation logic isn't fully implemented yet)
+func TestPrometheusExporter_TranslationStrategies(t *testing.T) {
+	tests := []struct {
+		name                    string
+		config                  func(addr string) *Config
+		expectedSuffixes        bool
+		expectsUnderscoreEscape bool // Currently all strategies escape to underscores
+	}{
+		{
+			name: "UnderscoreEscapingWithSuffixes strategy",
+			config: func(addr string) *Config {
+				return &Config{
+					ServerConfig: confighttp.ServerConfig{
+						Endpoint: addr,
+					},
+					TranslationStrategy: TranslationStrategyUnderscoreEscapingWithSuffixes,
+					MetricExpiration:    120 * time.Minute,
+				}
+			},
+			expectedSuffixes:        true,
+			expectsUnderscoreEscape: true,
+		},
+		{
+			name: "NoUTF8EscapingWithSuffixes strategy",
+			config: func(addr string) *Config {
+				return &Config{
+					ServerConfig: confighttp.ServerConfig{
+						Endpoint: addr,
+					},
+					TranslationStrategy: TranslationStrategyNoUTF8EscapingWithSuffixes,
+					MetricExpiration:    120 * time.Minute,
+				}
+			},
+			expectedSuffixes:        true,
+			expectsUnderscoreEscape: true, // TODO: Should preserve UTF-8 chars when implemented
+		},
+		{
+			name: "NoTranslation strategy",
+			config: func(addr string) *Config {
+				return &Config{
+					ServerConfig: confighttp.ServerConfig{
+						Endpoint: addr,
+					},
+					TranslationStrategy: TranslationStrategyNoTranslation,
+					MetricExpiration:    120 * time.Minute,
+				}
+			},
+			expectedSuffixes:        false,
+			expectsUnderscoreEscape: true, // TODO: Should preserve original names when implemented
+		},
+		{
+			name: "Legacy AddMetricSuffixes=true (backward compatibility)",
+			config: func(addr string) *Config {
+				return &Config{
+					ServerConfig: confighttp.ServerConfig{
+						Endpoint: addr,
+					},
+					AddMetricSuffixes: true, // Legacy field
+					MetricExpiration:  120 * time.Minute,
+				}
+			},
+			expectedSuffixes:        true,
+			expectsUnderscoreEscape: true,
+		},
+		{
+			name: "Legacy AddMetricSuffixes=false (backward compatibility)",
+			config: func(addr string) *Config {
+				return &Config{
+					ServerConfig: confighttp.ServerConfig{
+						Endpoint: addr,
+					},
+					AddMetricSuffixes: false, // Legacy field
+					MetricExpiration:  120 * time.Minute,
+				}
+			},
+			expectedSuffixes:        false,
+			expectsUnderscoreEscape: true, // TODO: Should preserve original names when implemented
+		},
+	}
+
+			for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addr := testutil.GetAvailableLocalAddress(t)
+			cfg := tt.config(addr)
+
+			factory := NewFactory()
+			set := exportertest.NewNopSettings(metadata.Type)
+			exp, err := factory.CreateMetrics(context.Background(), set, cfg)
+			require.NoError(t, err)
+			require.NotNil(t, exp)
+
+			t.Cleanup(func() {
+				require.NoError(t, exp.Shutdown(context.Background()))
+			})
+
+			require.NoError(t, exp.Start(context.Background(), componenttest.NewNopHost()))
+
+			// Create test metrics with different types and special characters
+			md := createTestMetrics()
+			require.NoError(t, exp.ConsumeMetrics(context.Background(), md))
+
+			// Scrape the metrics endpoint
+			res, err := http.Get("http://" + addr + "/metrics")
+			require.NoError(t, err, "Failed to perform a scrape")
+			require.Equal(t, http.StatusOK, res.StatusCode, "Mismatched HTTP response status code")
+
+			blob, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+			_ = res.Body.Close()
+
+			metricsOutput := string(blob)
+			t.Logf("Metrics output for %s:\n%s", tt.name, metricsOutput)
+
+			// Verify the config's ShouldAddMetricSuffixes method matches expected behavior
+			assert.Equal(t, tt.expectedSuffixes, cfg.ShouldAddMetricSuffixes(),
+				"ShouldAddMetricSuffixes() returned unexpected value for strategy %s", tt.name)
+
+			// Verify that metrics are being exported (basic functionality test)
+			assert.Contains(t, metricsOutput, "test_counter_bytes", 
+				"Counter metric not found in output for strategy %s", tt.name)
+			assert.Contains(t, metricsOutput, "test_gauge_temperature", 
+				"Gauge metric not found in output for strategy %s", tt.name)
+			assert.Contains(t, metricsOutput, "test_histogram_duration_seconds", 
+				"Histogram metric not found in output for strategy %s", tt.name)
+
+			// Verify that the exporter is working with the configured strategy
+			if tt.expectedSuffixes {
+				// Strategies that should add suffixes
+				assert.Contains(t, metricsOutput, "_total", 
+					"Expected suffix '_total' not found for strategy %s that should add suffixes", tt.name)
+			} else {
+				// For NoTranslation strategy, verify ShouldAddMetricSuffixes returns false
+				// (The actual metric name preservation will be implemented in the core translator)
+				assert.False(t, cfg.ShouldAddMetricSuffixes(),
+					"NoTranslation strategy should return false for ShouldAddMetricSuffixes")
+			}
+
+			// Verify the translation strategy is correctly set
+			expectedStrategy := cfg.GetTranslationStrategy()
+			switch tt.name {
+			case "UnderscoreEscapingWithSuffixes strategy":
+				assert.Equal(t, TranslationStrategyUnderscoreEscapingWithSuffixes, expectedStrategy)
+			case "NoUTF8EscapingWithSuffixes strategy":
+				assert.Equal(t, TranslationStrategyNoUTF8EscapingWithSuffixes, expectedStrategy)
+			case "NoTranslation strategy":
+				assert.Equal(t, TranslationStrategyNoTranslation, expectedStrategy)
+			case "Legacy AddMetricSuffixes=true (backward compatibility)":
+				assert.Equal(t, TranslationStrategyUnderscoreEscapingWithSuffixes, expectedStrategy)
+			case "Legacy AddMetricSuffixes=false (backward compatibility)":
+				assert.Equal(t, TranslationStrategyNoTranslation, expectedStrategy)
+			}
+		})
+	}
+}
+
+// createTestMetrics creates a set of test metrics with various types and special characters
+// to test the translation strategies.
+func createTestMetrics() pmetric.Metrics {
+	md := pmetric.NewMetrics()
+	rms := md.ResourceMetrics().AppendEmpty()
+	rms.Resource().Attributes().PutStr(string(conventions.ServiceNameKey), "test-service")
+	rms.Resource().Attributes().PutStr(string(conventions.ServiceInstanceIDKey), "test-instance")
+
+	ms := rms.ScopeMetrics().AppendEmpty().Metrics()
+
+	// Counter with special characters and unit
+	counter := ms.AppendEmpty()
+	counter.SetName("test.counter.bytes")  // Has dots
+	counter.SetDescription("Test counter with bytes")
+	counter.SetUnit("By")  // Bytes unit
+	counterSum := counter.SetEmptySum()
+	counterSum.SetIsMonotonic(true)
+	counterSum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+	counterDP := counterSum.DataPoints().AppendEmpty()
+	counterDP.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	counterDP.SetIntValue(42)
+
+	// Gauge with slashes
+	gauge := ms.AppendEmpty()
+	gauge.SetName("test/gauge/temperature")  // Has slashes
+	gauge.SetDescription("Test gauge with temperature")
+	gauge.SetUnit("Cel")  // Celsius unit
+	gaugeGauge := gauge.SetEmptyGauge()
+	gaugeDP := gaugeGauge.DataPoints().AppendEmpty()
+	gaugeDP.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	gaugeDP.SetDoubleValue(23.5)
+
+	// Histogram with dots and unit
+	histogram := ms.AppendEmpty()
+	histogram.SetName("test.histogram.duration.seconds")  // Has dots and unit in name
+	histogram.SetDescription("Test histogram with duration")
+	histogram.SetUnit("s")  // Seconds unit
+	histogramHist := histogram.SetEmptyHistogram()
+	histogramHist.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+	histogramDP := histogramHist.DataPoints().AppendEmpty()
+	histogramDP.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	histogramDP.SetCount(10)
+	histogramDP.SetSum(100.0)
+	histogramDP.BucketCounts().FromRaw([]uint64{1, 2, 3, 4})
+	histogramDP.ExplicitBounds().FromRaw([]float64{0.1, 1.0, 10.0})
+
+	return md
+}
