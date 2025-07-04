@@ -49,7 +49,7 @@ func newCollector(config *Config, logger *zap.Logger) *collector {
 		namespace:         prometheustranslator.CleanUpString(config.Namespace),
 		sendTimestamps:    config.SendTimestamps,
 		constLabels:       config.ConstLabels,
-		addMetricSuffixes: config.AddMetricSuffixes,
+		addMetricSuffixes: config.ShouldAddMetricSuffixes(),
 		metricExpiration:  config.MetricExpiration,
 	}
 }

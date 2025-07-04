@@ -31,7 +31,10 @@ The following settings can be optionally configured:
 - `resource_to_telemetry_conversion`
   - `enabled` (default = false): If `enabled` is `true`, all the resource attributes will be converted to metric labels by default.
 - `enable_open_metrics`: (default = `false`): If true, metrics will be exported using the OpenMetrics format. Exemplars are only exported in the OpenMetrics format, and only for histogram and monotonic sum (i.e. counter) metrics.
-- `add_metric_suffixes`: (default = `true`): If false, addition of type and unit suffixes is disabled.
+- `translation_strategy` (default = `prometheus_compliant`): Defines how OpenTelemetry metrics are translated to Prometheus format. Options:
+  - `prometheus_compliant`: Translates metric names to be Prometheus compliant by adding type and unit suffixes (equivalent to `add_metric_suffixes=true`)
+  - `preserve_otel`: Preserves the original OpenTelemetry metric names (equivalent to `add_metric_suffixes=false`)
+- `add_metric_suffixes`: (default = `true`): **DEPRECATED** - Use `translation_strategy` instead. If false, addition of type and unit suffixes is disabled. When both `translation_strategy` and `add_metric_suffixes` are specified, `translation_strategy` takes precedence.
 
 Example:
 
@@ -50,7 +53,8 @@ exporters:
     send_timestamps: true
     metric_expiration: 180m
     enable_open_metrics: true
-    add_metric_suffixes: false
+    translation_strategy: preserve_otel  # Use this instead of add_metric_suffixes
+    # add_metric_suffixes: false        # DEPRECATED - use translation_strategy instead
     resource_to_telemetry_conversion:
       enabled: true
 ```

@@ -56,6 +56,21 @@ func TestLoadConfig(t *testing.T) {
 				AddMetricSuffixes: false,
 			},
 		},
+		{
+			id: component.NewIDWithName(metadata.Type, "3"),
+			expected: &Config{
+				ServerConfig: confighttp.ServerConfig{
+					Endpoint: "1.2.3.4:1235",
+				},
+				Namespace: "test-space-new",
+				ConstLabels: map[string]string{
+					"label1": "value1",
+				},
+				SendTimestamps:      true,
+				MetricExpiration:    90 * time.Minute,
+				TranslationStrategy: TranslationStrategyPreserveOTel,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -69,6 +84,78 @@ func TestLoadConfig(t *testing.T) {
 
 			assert.NoError(t, xconfmap.Validate(cfg))
 			assert.Equal(t, tt.expected, cfg)
+		})
+	}
+}
+
+func TestTranslationStrategy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                    string
+		config                  Config
+		expectedStrategy        TranslationStrategy
+		expectedShouldAddSuffix bool
+	}{
+		{
+			name: "default config should use prometheus_compliant",
+			config: Config{
+				TranslationStrategy: TranslationStrategyPrometheusCompliant,
+				AddMetricSuffixes:   true,
+			},
+			expectedStrategy:        TranslationStrategyPrometheusCompliant,
+			expectedShouldAddSuffix: true,
+		},
+		{
+			name: "preserve_otel strategy",
+			config: Config{
+				TranslationStrategy: TranslationStrategyPreserveOTel,
+				AddMetricSuffixes:   true, // Should be ignored
+			},
+			expectedStrategy:        TranslationStrategyPreserveOTel,
+			expectedShouldAddSuffix: false,
+		},
+		{
+			name: "prometheus_compliant strategy",
+			config: Config{
+				TranslationStrategy: TranslationStrategyPrometheusCompliant,
+				AddMetricSuffixes:   false, // Should be ignored
+			},
+			expectedStrategy:        TranslationStrategyPrometheusCompliant,
+			expectedShouldAddSuffix: true,
+		},
+		{
+			name: "backward compatibility: AddMetricSuffixes=true",
+			config: Config{
+				// TranslationStrategy not set
+				AddMetricSuffixes: true,
+			},
+			expectedStrategy:        TranslationStrategyPrometheusCompliant,
+			expectedShouldAddSuffix: true,
+		},
+		{
+			name: "backward compatibility: AddMetricSuffixes=false",
+			config: Config{
+				// TranslationStrategy not set
+				AddMetricSuffixes: false,
+			},
+			expectedStrategy:        TranslationStrategyPreserveOTel,
+			expectedShouldAddSuffix: false,
+		},
+		{
+			name: "empty config defaults to preserve_otel for backward compatibility with AddMetricSuffixes=false",
+			config: Config{
+				// Both fields empty/default
+			},
+			expectedStrategy:        TranslationStrategyPreserveOTel,
+			expectedShouldAddSuffix: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expectedStrategy, tt.config.GetTranslationStrategy())
+			assert.Equal(t, tt.expectedShouldAddSuffix, tt.config.ShouldAddMetricSuffixes())
 		})
 	}
 }

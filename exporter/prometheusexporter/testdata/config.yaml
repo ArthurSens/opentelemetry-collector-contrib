@@ -12,3 +12,11 @@ prometheus/2:
   send_timestamps: true
   metric_expiration: 60m
   add_metric_suffixes: false
+prometheus/3:
+  endpoint: "1.2.3.4:1235"
+  namespace: test-space-new
+  translation_strategy: preserve_otel
+  const_labels:
+    label1: value1
+  send_timestamps: true
+  metric_expiration: 90m

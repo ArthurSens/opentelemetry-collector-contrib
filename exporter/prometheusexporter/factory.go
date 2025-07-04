@@ -30,7 +30,8 @@ func createDefaultConfig() component.Config {
 		SendTimestamps:    false,
 		MetricExpiration:  time.Minute * 5,
 		EnableOpenMetrics: false,
-		AddMetricSuffixes: true,
+		// TranslationStrategy and AddMetricSuffixes are not set explicitly
+		// The effective behavior is determined by GetTranslationStrategy()
 	}
 }
 
@@ -40,6 +41,19 @@ func createMetricsExporter(
 	cfg component.Config,
 ) (exporter.Metrics, error) {
 	pcfg := cfg.(*Config)
+
+	// Warn about deprecated configuration
+	if pcfg.TranslationStrategy == "" && pcfg.AddMetricSuffixes != true {
+		// Only warn if AddMetricSuffixes is explicitly set to false (non-default)
+		if set.Logger != nil {
+			set.Logger.Warn(
+				"The 'add_metric_suffixes' configuration option is deprecated. " +
+				"Please use 'translation_strategy' instead. " +
+				"Use 'translation_strategy: preserve_otel' for add_metric_suffixes: false, " +
+				"or 'translation_strategy: prometheus_compliant' for add_metric_suffixes: true.",
+			)
+		}
+	}
 
 	prometheus, err := newPrometheusExporter(pcfg, set)
 	if err != nil {
