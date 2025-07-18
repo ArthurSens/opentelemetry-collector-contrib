@@ -26,11 +26,12 @@ func NewFactory() exporter.Factory {
 
 func createDefaultConfig() component.Config {
 	return &Config{
-		ConstLabels:       map[string]string{},
-		SendTimestamps:    false,
-		MetricExpiration:  time.Minute * 5,
-		EnableOpenMetrics: false,
-		AddMetricSuffixes: true,
+		ConstLabels:         map[string]string{},
+		SendTimestamps:      false,
+		MetricExpiration:    time.Minute * 5,
+		EnableOpenMetrics:   false,
+		AddMetricSuffixes:   true,
+		TranslationStrategy: UnderscoreEscapingWithSuffixes,
 	}
 }
 

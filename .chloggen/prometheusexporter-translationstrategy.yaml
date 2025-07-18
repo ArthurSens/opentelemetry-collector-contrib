@@ -1,0 +1,33 @@
+# Use this changelog template to create an entry for release notes.
+
+# One of 'breaking', 'deprecation', 'new_component', 'enhancement', 'bug_fix'
+change_type: enhancement
+
+# The name of the component, or a single word describing the area of concern, (e.g. filelogreceiver)
+component: prometheusexporter
+
+# A brief description of the change.  Surround your text with quotes ("") if it needs to start with a backtick (`).
+note: Add `translation_strategy` configuration option to control OTLP metric and attribute name translation to Prometheus format
+
+# Mandatory: One or more tracking issues related to the change. You can use the PR number here if no issue exists.
+issues: [4533]
+
+# (Optional) One or more lines of additional information to render under the primary note.
+# These lines will be padded with 2 spaces and then inserted directly into the document.
+# Use pipe (|) for multiline entries.
+subtext: |
+  The new `translation_strategy` configuration replaces the `add_metric_suffixes` option and provides four strategies:
+  - `UnderscoreEscapingWithSuffixes` (default): Fully escapes metric names and includes type/unit suffixes
+  - `UnderscoreEscapingWithoutSuffixes`: Escapes special characters but omits suffixes  
+  - `NoUTF8EscapingWithSuffixes`: Preserves UTF-8 characters and includes suffixes
+  - `NoTranslation`: Bypasses all translation
+  This change is being implemented through the `exporter.prometheusexporter.UseTranslationStrategy` feature gate to comply with OpenTelemetry specification changes. The existing `add_metric_suffixes` configuration remains supported but is deprecated when the feature gate is enabled.
+
+# If your change doesn't affect end users or the exported elements of any package,
+# you should instead start your pull request title with [chore] or use the "Skip Changelog" label.
+# Optional: The change log or logs in which this entry should be included.
+# e.g. '[user]' or '[user, api]'
+# Include 'user' if the change is relevant to end users.
+# Include 'api' if there is a change to a library API.
+# Default: '[user]'
+change_logs: [user]

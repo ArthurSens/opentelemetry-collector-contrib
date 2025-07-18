@@ -31,7 +31,12 @@ The following settings can be optionally configured:
 - `resource_to_telemetry_conversion`
   - `enabled` (default = false): If `enabled` is `true`, all the resource attributes will be converted to metric labels by default.
 - `enable_open_metrics`: (default = `false`): If true, metrics will be exported using the OpenMetrics format. Exemplars are only exported in the OpenMetrics format, and only for histogram and monotonic sum (i.e. counter) metrics.
-- `add_metric_suffixes`: (default = `true`): If false, addition of type and unit suffixes is disabled.
+- `add_metric_suffixes`: (default = `true`): If false, addition of type and unit suffixes is disabled. **Deprecated**: Use `translation_strategy` instead when the `exporter.prometheusexporter.UseTranslationStrategy` feature gate is enabled.
+- `translation_strategy`: (default = `UnderscoreEscapingWithSuffixes`): Controls how OTLP metric and attribute names are translated into Prometheus metric and label names. Only used when the `exporter.prometheusexporter.UseTranslationStrategy` feature gate is enabled. Available options:
+  - `UnderscoreEscapingWithSuffixes`: Fully escapes metric names for classic Prometheus metric name compatibility, and includes appending type and unit suffixes.
+  - `UnderscoreEscapingWithoutSuffixes`: Metric names will continue to escape special characters to `_`, but suffixes won't be attached.
+  - `NoUTF8EscapingWithSuffixes`: Disables changing special characters to `_`. Special suffixes like units and `_total` for counters will be attached.
+  - `NoTranslation`: Bypasses all metric and label name translation, passing them through unaltered.
 
 Example:
 
@@ -50,7 +55,10 @@ exporters:
     send_timestamps: true
     metric_expiration: 180m
     enable_open_metrics: true
+    # Legacy configuration - deprecated when feature gate is enabled
     add_metric_suffixes: false
+    # New configuration - requires exporter.prometheusexporter.UseTranslationStrategy feature gate
+    translation_strategy: "UnderscoreEscapingWithoutSuffixes"
     resource_to_telemetry_conversion:
       enabled: true
 ```

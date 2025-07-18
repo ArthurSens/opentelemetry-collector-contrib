@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
 	"go.opentelemetry.io/collector/confmap/xconfmap"
+	"go.opentelemetry.io/collector/featuregate"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusexporter/internal/metadata"
 )
@@ -52,9 +53,10 @@ func TestLoadConfig(t *testing.T) {
 					"label1":        "value1",
 					"another label": "spaced value",
 				},
-				SendTimestamps:    true,
-				MetricExpiration:  60 * time.Minute,
-				AddMetricSuffixes: false,
+				SendTimestamps:      true,
+				MetricExpiration:    60 * time.Minute,
+				AddMetricSuffixes:   false,
+				TranslationStrategy: UnderscoreEscapingWithSuffixes,
 			},
 		},
 	}
@@ -72,4 +74,74 @@ func TestLoadConfig(t *testing.T) {
 			assert.Equal(t, tt.expected, cfg)
 		})
 	}
+}
+
+func TestTranslationStrategyValidation(t *testing.T) {
+	tests := []struct {
+		name          string
+		strategy      TranslationStrategy
+		featureGateOn bool
+		wantErr       bool
+	}{
+		{
+			name:          "Valid strategy with feature gate enabled",
+			strategy:      UnderscoreEscapingWithSuffixes,
+			featureGateOn: true,
+			wantErr:       false,
+		},
+		{
+			name:          "Valid strategy NoTranslation with feature gate enabled",
+			strategy:      NoTranslation,
+			featureGateOn: true,
+			wantErr:       false,
+		},
+		{
+			name:          "Invalid strategy with feature gate enabled",
+			strategy:      "InvalidStrategy",
+			featureGateOn: true,
+			wantErr:       true,
+		},
+		{
+			name:          "Empty strategy with feature gate enabled",
+			strategy:      "",
+			featureGateOn: true,
+			wantErr:       true,
+		},
+		{
+			name:          "Any strategy with feature gate disabled",
+			strategy:      "InvalidStrategy",
+			featureGateOn: false,
+			wantErr:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set feature gate state
+			originalState := translationStrategyFeatureGate.IsEnabled()
+			err := featuregate.GlobalRegistry().Set("exporter.prometheusexporter.UseTranslationStrategy", tt.featureGateOn)
+			require.NoError(t, err)
+			defer func() {
+				err := featuregate.GlobalRegistry().Set("exporter.prometheusexporter.UseTranslationStrategy", originalState)
+				require.NoError(t, err)
+			}()
+
+			cfg := &Config{
+				TranslationStrategy: tt.strategy,
+			}
+
+			err = cfg.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestDefaultConfigTranslationStrategy(t *testing.T) {
+	cfg := createDefaultConfig().(*Config)
+	assert.Equal(t, UnderscoreEscapingWithSuffixes, cfg.TranslationStrategy)
+	assert.True(t, cfg.AddMetricSuffixes) // Legacy field should still default to true
 }

@@ -21,6 +21,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	prometheustranslator "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus"
+	"go.opentelemetry.io/collector/featuregate"
+	"github.com/stretchr/testify/assert"
 )
 
 type mockAccumulator struct {
@@ -835,5 +837,167 @@ func TestAccumulateSummary(t *testing.T) {
 				require.Equal(t, 1, n)
 			})
 		}
+	}
+}
+
+func TestConfigureMetricNamer(t *testing.T) {
+	tests := []struct {
+		name                string
+		config              *Config
+		featureGateEnabled  bool
+		expectedSuffixes    bool
+		expectedNamespace   string
+	}{
+		{
+			name: "Legacy mode with add_metric_suffixes true",
+			config: &Config{
+				Namespace:         "test_ns",
+				AddMetricSuffixes: true,
+			},
+			featureGateEnabled: false,
+			expectedSuffixes:   true,
+			expectedNamespace:  "test_ns",
+		},
+		{
+			name: "Legacy mode with add_metric_suffixes false",
+			config: &Config{
+				Namespace:         "test_ns",
+				AddMetricSuffixes: false,
+			},
+			featureGateEnabled: false,
+			expectedSuffixes:   false,
+			expectedNamespace:  "test_ns",
+		},
+		{
+			name: "Translation strategy UnderscoreEscapingWithSuffixes",
+			config: &Config{
+				Namespace:           "test_ns",
+				TranslationStrategy: UnderscoreEscapingWithSuffixes,
+			},
+			featureGateEnabled: true,
+			expectedSuffixes:   true,
+			expectedNamespace:  "test_ns",
+		},
+		{
+			name: "Translation strategy UnderscoreEscapingWithoutSuffixes",
+			config: &Config{
+				Namespace:           "test_ns",
+				TranslationStrategy: UnderscoreEscapingWithoutSuffixes,
+			},
+			featureGateEnabled: true,
+			expectedSuffixes:   false,
+			expectedNamespace:  "test_ns",
+		},
+		{
+			name: "Translation strategy NoUTF8EscapingWithSuffixes",
+			config: &Config{
+				Namespace:           "test_ns",
+				TranslationStrategy: NoUTF8EscapingWithSuffixes,
+			},
+			featureGateEnabled: true,
+			expectedSuffixes:   true,
+			expectedNamespace:  "test_ns",
+		},
+		{
+			name: "Translation strategy NoTranslation",
+			config: &Config{
+				Namespace:           "test_ns",
+				TranslationStrategy: NoTranslation,
+			},
+			featureGateEnabled: true,
+			expectedSuffixes:   false,
+			expectedNamespace:  "test_ns",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set feature gate state
+			originalState := translationStrategyFeatureGate.IsEnabled()
+			err := featuregate.GlobalRegistry().Set("exporter.prometheusexporter.UseTranslationStrategy", tt.featureGateEnabled)
+			require.NoError(t, err)
+			defer func() {
+				err := featuregate.GlobalRegistry().Set("exporter.prometheusexporter.UseTranslationStrategy", originalState)
+				require.NoError(t, err)
+			}()
+
+			namer := configureMetricNamer(tt.config)
+			assert.Equal(t, tt.expectedSuffixes, namer.WithMetricSuffixes)
+			assert.Equal(t, tt.expectedNamespace, namer.Namespace)
+		})
+	}
+}
+
+func TestGetEffectiveAddMetricSuffixes(t *testing.T) {
+	tests := []struct {
+		name               string
+		config             *Config
+		featureGateEnabled bool
+		expected           bool
+	}{
+		{
+			name: "Legacy mode true",
+			config: &Config{
+				AddMetricSuffixes: true,
+			},
+			featureGateEnabled: false,
+			expected:           true,
+		},
+		{
+			name: "Legacy mode false",
+			config: &Config{
+				AddMetricSuffixes: false,
+			},
+			featureGateEnabled: false,
+			expected:           false,
+		},
+		{
+			name: "Translation strategy with suffixes",
+			config: &Config{
+				TranslationStrategy: UnderscoreEscapingWithSuffixes,
+			},
+			featureGateEnabled: true,
+			expected:           true,
+		},
+		{
+			name: "Translation strategy without suffixes",
+			config: &Config{
+				TranslationStrategy: UnderscoreEscapingWithoutSuffixes,
+			},
+			featureGateEnabled: true,
+			expected:           false,
+		},
+		{
+			name: "Translation strategy NoUTF8EscapingWithSuffixes",
+			config: &Config{
+				TranslationStrategy: NoUTF8EscapingWithSuffixes,
+			},
+			featureGateEnabled: true,
+			expected:           true,
+		},
+		{
+			name: "Translation strategy NoTranslation",
+			config: &Config{
+				TranslationStrategy: NoTranslation,
+			},
+			featureGateEnabled: true,
+			expected:           false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set feature gate state
+			originalState := translationStrategyFeatureGate.IsEnabled()
+			err := featuregate.GlobalRegistry().Set("exporter.prometheusexporter.UseTranslationStrategy", tt.featureGateEnabled)
+			require.NoError(t, err)
+			defer func() {
+				err := featuregate.GlobalRegistry().Set("exporter.prometheusexporter.UseTranslationStrategy", originalState)
+				require.NoError(t, err)
+			}()
+
+			result := getEffectiveAddMetricSuffixes(tt.config)
+			assert.Equal(t, tt.expected, result)
+		})
 	}
 }

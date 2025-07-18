@@ -48,17 +48,78 @@ type metricFamily struct {
 }
 
 func newCollector(config *Config, logger *zap.Logger) *collector {
-	labelNamer := otlptranslator.LabelNamer{}
+	labelNamer := configureLabelNamer(config)
+	metricNamer := configureMetricNamer(config)
+
 	return &collector{
 		accumulator:       newAccumulator(logger, config.MetricExpiration),
 		logger:            logger,
 		namespace:         labelNamer.Build(config.Namespace),
 		sendTimestamps:    config.SendTimestamps,
 		constLabels:       config.ConstLabels,
-		addMetricSuffixes: config.AddMetricSuffixes,
+		addMetricSuffixes: getEffectiveAddMetricSuffixes(config),
 		metricExpiration:  config.MetricExpiration,
-		metricNamer:       otlptranslator.MetricNamer{WithMetricSuffixes: config.AddMetricSuffixes, Namespace: config.Namespace},
+		metricNamer:       metricNamer,
 		labelNamer:        labelNamer,
+	}
+}
+
+// configureMetricNamer configures the MetricNamer based on the translation strategy or legacy configuration
+func configureMetricNamer(config *Config) otlptranslator.MetricNamer {
+	if translationStrategyFeatureGate.IsEnabled() {
+		switch config.TranslationStrategy {
+		case UnderscoreEscapingWithSuffixes:
+			return otlptranslator.MetricNamer{WithMetricSuffixes: true, Namespace: config.Namespace}
+		case UnderscoreEscapingWithoutSuffixes:
+			return otlptranslator.MetricNamer{WithMetricSuffixes: false, Namespace: config.Namespace}
+		case NoUTF8EscapingWithSuffixes:
+			// TODO: This will need to be implemented when otlptranslator supports UTF-8 escaping control
+			return otlptranslator.MetricNamer{WithMetricSuffixes: true, Namespace: config.Namespace}
+		case NoTranslation:
+			// TODO: This will need to be implemented when otlptranslator supports disabling all translation
+			return otlptranslator.MetricNamer{WithMetricSuffixes: false, Namespace: config.Namespace}
+		default:
+			// Fallback to default behavior
+			return otlptranslator.MetricNamer{WithMetricSuffixes: true, Namespace: config.Namespace}
+		}
+	} else {
+		// Legacy behavior using AddMetricSuffixes
+		return otlptranslator.MetricNamer{WithMetricSuffixes: config.AddMetricSuffixes, Namespace: config.Namespace}
+	}
+}
+
+// configureLabelNamer configures the LabelNamer based on the translation strategy or legacy configuration
+func configureLabelNamer(config *Config) otlptranslator.LabelNamer {
+	if translationStrategyFeatureGate.IsEnabled() {
+		switch config.TranslationStrategy {
+		case UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes:
+			return otlptranslator.LabelNamer{}
+		case NoUTF8EscapingWithSuffixes, NoTranslation:
+			// TODO: This will need to be implemented when otlptranslator supports UTF-8 escaping control
+			return otlptranslator.LabelNamer{}
+		default:
+			// Fallback to default behavior
+			return otlptranslator.LabelNamer{}
+		}
+	} else {
+		// Legacy behavior
+		return otlptranslator.LabelNamer{}
+	}
+}
+
+// getEffectiveAddMetricSuffixes returns the effective addMetricSuffixes value based on the configuration
+func getEffectiveAddMetricSuffixes(config *Config) bool {
+	if translationStrategyFeatureGate.IsEnabled() {
+		switch config.TranslationStrategy {
+		case UnderscoreEscapingWithSuffixes, NoUTF8EscapingWithSuffixes:
+			return true
+		case UnderscoreEscapingWithoutSuffixes, NoTranslation:
+			return false
+		default:
+			return true // Fallback to default
+		}
+	} else {
+		return config.AddMetricSuffixes
 	}
 }
 
