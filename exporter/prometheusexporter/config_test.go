@@ -16,9 +16,9 @@ import (
 	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
 	"go.opentelemetry.io/collector/confmap/xconfmap"
-	"go.opentelemetry.io/collector/featuregate"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusexporter/internal/metadata"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/common/testutil"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -118,19 +118,13 @@ func TestTranslationStrategyValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set feature gate state
-			originalState := translationStrategyFeatureGate.IsEnabled()
-			err := featuregate.GlobalRegistry().Set("exporter.prometheusexporter.UseTranslationStrategy", tt.featureGateOn)
-			require.NoError(t, err)
-			defer func() {
-				err := featuregate.GlobalRegistry().Set("exporter.prometheusexporter.UseTranslationStrategy", originalState)
-				require.NoError(t, err)
-			}()
+			defer testutil.SetFeatureGateForTest(t, translationStrategyFeatureGate, tt.featureGateOn)()
 
 			cfg := &Config{
 				TranslationStrategy: tt.strategy,
 			}
 
-			err = cfg.Validate()
+			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {

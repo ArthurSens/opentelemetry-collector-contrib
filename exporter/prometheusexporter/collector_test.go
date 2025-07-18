@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	io_prometheus_client "github.com/prometheus/client_model/go"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -20,9 +21,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/common/testutil"
 	prometheustranslator "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus"
-	"go.opentelemetry.io/collector/featuregate"
-	"github.com/stretchr/testify/assert"
 )
 
 type mockAccumulator struct {
@@ -842,11 +842,11 @@ func TestAccumulateSummary(t *testing.T) {
 
 func TestConfigureMetricNamer(t *testing.T) {
 	tests := []struct {
-		name                string
-		config              *Config
-		featureGateEnabled  bool
-		expectedSuffixes    bool
-		expectedNamespace   string
+		name               string
+		config             *Config
+		featureGateEnabled bool
+		expectedSuffixes   bool
+		expectedNamespace  string
 	}{
 		{
 			name: "Legacy mode with add_metric_suffixes true",
@@ -913,13 +913,7 @@ func TestConfigureMetricNamer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set feature gate state
-			originalState := translationStrategyFeatureGate.IsEnabled()
-			err := featuregate.GlobalRegistry().Set("exporter.prometheusexporter.UseTranslationStrategy", tt.featureGateEnabled)
-			require.NoError(t, err)
-			defer func() {
-				err := featuregate.GlobalRegistry().Set("exporter.prometheusexporter.UseTranslationStrategy", originalState)
-				require.NoError(t, err)
-			}()
+			defer testutil.SetFeatureGateForTest(t, translationStrategyFeatureGate, tt.featureGateEnabled)()
 
 			namer := configureMetricNamer(tt.config)
 			assert.Equal(t, tt.expectedSuffixes, namer.WithMetricSuffixes)
@@ -988,13 +982,7 @@ func TestGetEffectiveAddMetricSuffixes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set feature gate state
-			originalState := translationStrategyFeatureGate.IsEnabled()
-			err := featuregate.GlobalRegistry().Set("exporter.prometheusexporter.UseTranslationStrategy", tt.featureGateEnabled)
-			require.NoError(t, err)
-			defer func() {
-				err := featuregate.GlobalRegistry().Set("exporter.prometheusexporter.UseTranslationStrategy", originalState)
-				require.NoError(t, err)
-			}()
+			defer testutil.SetFeatureGateForTest(t, translationStrategyFeatureGate, tt.featureGateEnabled)()
 
 			result := getEffectiveAddMetricSuffixes(tt.config)
 			assert.Equal(t, tt.expected, result)
