@@ -918,6 +918,8 @@ func TestConfigureMetricNamer(t *testing.T) {
 			namer := configureMetricNamer(tt.config)
 			assert.Equal(t, tt.expectedSuffixes, namer.WithMetricSuffixes)
 			assert.Equal(t, tt.expectedNamespace, namer.Namespace)
+			
+			// Note: UTF-8 configuration will be added when otlptranslator supports it
 		})
 	}
 }
@@ -996,70 +998,70 @@ func TestGetTranslationConfiguration(t *testing.T) {
 		config              *Config
 		featureGateEnabled  bool
 		expectedSuffixes    bool
-		expectedUTF8Escaping bool
+		expectedAllowUTF8   bool // Prepared for future otlptranslator UTF-8 support
 	}{
 		{
 			name: "Legacy mode with add_metric_suffixes true",
 			config: &Config{
 				AddMetricSuffixes: true,
 			},
-			featureGateEnabled:   false,
-			expectedSuffixes:     true,
-			expectedUTF8Escaping: true,
+			featureGateEnabled: false,
+			expectedSuffixes:   true,
+			expectedAllowUTF8:  false, // Legacy mode uses classic Prometheus compatibility (escape UTF-8)
 		},
 		{
 			name: "Legacy mode with add_metric_suffixes false",
 			config: &Config{
 				AddMetricSuffixes: false,
 			},
-			featureGateEnabled:   false,
-			expectedSuffixes:     false,
-			expectedUTF8Escaping: true,
+			featureGateEnabled: false,
+			expectedSuffixes:   false,
+			expectedAllowUTF8:  false, // Legacy mode uses classic Prometheus compatibility (escape UTF-8)
 		},
 		{
 			name: "Translation strategy UnderscoreEscapingWithSuffixes",
 			config: &Config{
 				TranslationStrategy: UnderscoreEscapingWithSuffixes,
 			},
-			featureGateEnabled:   true,
-			expectedSuffixes:     true,
-			expectedUTF8Escaping: true,
+			featureGateEnabled: true,
+			expectedSuffixes:   true,
+			expectedAllowUTF8:  false, // Underscore escaping = escape UTF-8 to underscores
 		},
 		{
 			name: "Translation strategy UnderscoreEscapingWithoutSuffixes",
 			config: &Config{
 				TranslationStrategy: UnderscoreEscapingWithoutSuffixes,
 			},
-			featureGateEnabled:   true,
-			expectedSuffixes:     false,
-			expectedUTF8Escaping: true,
+			featureGateEnabled: true,
+			expectedSuffixes:   false,
+			expectedAllowUTF8:  false, // Underscore escaping = escape UTF-8 to underscores
 		},
 		{
 			name: "Translation strategy NoUTF8EscapingWithSuffixes",
 			config: &Config{
 				TranslationStrategy: NoUTF8EscapingWithSuffixes,
 			},
-			featureGateEnabled:   true,
-			expectedSuffixes:     true,
-			expectedUTF8Escaping: false,
+			featureGateEnabled: true,
+			expectedSuffixes:   true,
+			expectedAllowUTF8:  true, // No UTF-8 escaping = allow UTF-8 characters
 		},
 		{
 			name: "Translation strategy NoTranslation",
 			config: &Config{
 				TranslationStrategy: NoTranslation,
 			},
-			featureGateEnabled:   true,
-			expectedSuffixes:     false,
-			expectedUTF8Escaping: false,
+			featureGateEnabled: true,
+			expectedSuffixes:   false,
+			expectedAllowUTF8:  true, // No translation = allow UTF-8 characters
 		},
 		{
 			name: "Invalid strategy with feature gate enabled",
 			config: &Config{
 				TranslationStrategy: "InvalidStrategy",
 			},
-			featureGateEnabled:   true,
-			expectedSuffixes:     true,
-			expectedUTF8Escaping: true,
+			featureGateEnabled: true,
+			expectedSuffixes:   true,
+			expectedAllowUTF8:  false, // Fallback to default (classic Prometheus compatibility)
 		},
 	}
 
@@ -1068,9 +1070,11 @@ func TestGetTranslationConfiguration(t *testing.T) {
 			// Set feature gate state
 			defer testutil.SetFeatureGateForTest(t, translationStrategyFeatureGate, tt.featureGateEnabled)()
 
-			withSuffixes, withUTF8Escaping := getTranslationConfiguration(tt.config)
+			withSuffixes, allowUTF8 := getTranslationConfiguration(tt.config)
 			assert.Equal(t, tt.expectedSuffixes, withSuffixes)
-			assert.Equal(t, tt.expectedUTF8Escaping, withUTF8Escaping)
+			assert.Equal(t, tt.expectedAllowUTF8, allowUTF8, "UTF-8 configuration prepared for future otlptranslator support")
 		})
 	}
 }
+
+

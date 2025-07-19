@@ -67,37 +67,40 @@ func newCollector(config *Config, logger *zap.Logger) *collector {
 // configureMetricNamer configures the MetricNamer based on the translation strategy or legacy configuration
 func configureMetricNamer(config *Config) otlptranslator.MetricNamer {
 	withSuffixes, _ := getTranslationConfiguration(config)
-	return otlptranslator.MetricNamer{WithMetricSuffixes: withSuffixes, Namespace: config.Namespace}
+	return otlptranslator.MetricNamer{
+		WithMetricSuffixes: withSuffixes,
+		Namespace:          config.Namespace,
+	}
 }
 
 // configureLabelNamer configures the LabelNamer based on the translation strategy or legacy configuration
 func configureLabelNamer(config *Config) otlptranslator.LabelNamer {
-	_, withUTF8Escaping := getTranslationConfiguration(config)
 	// TODO: Implement UTF-8 escaping configuration when otlptranslator supports it
-	_ = withUTF8Escaping
+	// Currently, otlptranslator doesn't expose configuration for UTF-8 character handling
 	return otlptranslator.LabelNamer{}
 }
 
 // getTranslationConfiguration returns the translation configuration based on the strategy or legacy settings
-// Returns (withSuffixes, withUTF8Escaping)
+// Returns (withSuffixes, allowUTF8)
+// Note: allowUTF8 is prepared for future use when otlptranslator supports UTF-8 configuration
 func getTranslationConfiguration(config *Config) (bool, bool) {
 	if translationStrategyFeatureGate.IsEnabled() {
 		switch config.TranslationStrategy {
 		case UnderscoreEscapingWithSuffixes:
-			return true, true // suffixes enabled, UTF-8 escaping enabled
+			return true, false // suffixes enabled, UTF-8 would be escaped to underscores
 		case UnderscoreEscapingWithoutSuffixes:
-			return false, true // suffixes disabled, UTF-8 escaping enabled
+			return false, false // suffixes disabled, UTF-8 would be escaped to underscores
 		case NoUTF8EscapingWithSuffixes:
-			return true, false // suffixes enabled, UTF-8 escaping disabled
+			return true, true // suffixes enabled, UTF-8 characters would be allowed
 		case NoTranslation:
-			return false, false // suffixes disabled, UTF-8 escaping disabled
+			return false, true // suffixes disabled, UTF-8 characters would be allowed
 		default:
 			// Fallback to default behavior
-			return true, true
+			return true, false
 		}
 	} else {
-		// Legacy behavior using AddMetricSuffixes, UTF-8 escaping always enabled
-		return config.AddMetricSuffixes, true
+		// Legacy behavior using AddMetricSuffixes, UTF-8 would be escaped to underscores (classic Prometheus compatibility)
+		return config.AddMetricSuffixes, false
 	}
 }
 
