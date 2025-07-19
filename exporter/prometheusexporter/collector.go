@@ -66,61 +66,45 @@ func newCollector(config *Config, logger *zap.Logger) *collector {
 
 // configureMetricNamer configures the MetricNamer based on the translation strategy or legacy configuration
 func configureMetricNamer(config *Config) otlptranslator.MetricNamer {
-	if translationStrategyFeatureGate.IsEnabled() {
-		switch config.TranslationStrategy {
-		case UnderscoreEscapingWithSuffixes:
-			return otlptranslator.MetricNamer{WithMetricSuffixes: true, Namespace: config.Namespace}
-		case UnderscoreEscapingWithoutSuffixes:
-			return otlptranslator.MetricNamer{WithMetricSuffixes: false, Namespace: config.Namespace}
-		case NoUTF8EscapingWithSuffixes:
-			// TODO: This will need to be implemented when otlptranslator supports UTF-8 escaping control
-			return otlptranslator.MetricNamer{WithMetricSuffixes: true, Namespace: config.Namespace}
-		case NoTranslation:
-			// TODO: This will need to be implemented when otlptranslator supports disabling all translation
-			return otlptranslator.MetricNamer{WithMetricSuffixes: false, Namespace: config.Namespace}
-		default:
-			// Fallback to default behavior
-			return otlptranslator.MetricNamer{WithMetricSuffixes: true, Namespace: config.Namespace}
-		}
-	} else {
-		// Legacy behavior using AddMetricSuffixes
-		return otlptranslator.MetricNamer{WithMetricSuffixes: config.AddMetricSuffixes, Namespace: config.Namespace}
-	}
+	withSuffixes, _ := getTranslationConfiguration(config)
+	return otlptranslator.MetricNamer{WithMetricSuffixes: withSuffixes, Namespace: config.Namespace}
 }
 
 // configureLabelNamer configures the LabelNamer based on the translation strategy or legacy configuration
 func configureLabelNamer(config *Config) otlptranslator.LabelNamer {
+	_, withUTF8Escaping := getTranslationConfiguration(config)
+	// TODO: Implement UTF-8 escaping configuration when otlptranslator supports it
+	_ = withUTF8Escaping
+	return otlptranslator.LabelNamer{}
+}
+
+// getTranslationConfiguration returns the translation configuration based on the strategy or legacy settings
+// Returns (withSuffixes, withUTF8Escaping)
+func getTranslationConfiguration(config *Config) (bool, bool) {
 	if translationStrategyFeatureGate.IsEnabled() {
 		switch config.TranslationStrategy {
-		case UnderscoreEscapingWithSuffixes, UnderscoreEscapingWithoutSuffixes:
-			return otlptranslator.LabelNamer{}
-		case NoUTF8EscapingWithSuffixes, NoTranslation:
-			// TODO: This will need to be implemented when otlptranslator supports UTF-8 escaping control
-			return otlptranslator.LabelNamer{}
+		case UnderscoreEscapingWithSuffixes:
+			return true, true // suffixes enabled, UTF-8 escaping enabled
+		case UnderscoreEscapingWithoutSuffixes:
+			return false, true // suffixes disabled, UTF-8 escaping enabled
+		case NoUTF8EscapingWithSuffixes:
+			return true, false // suffixes enabled, UTF-8 escaping disabled
+		case NoTranslation:
+			return false, false // suffixes disabled, UTF-8 escaping disabled
 		default:
 			// Fallback to default behavior
-			return otlptranslator.LabelNamer{}
+			return true, true
 		}
 	} else {
-		// Legacy behavior
-		return otlptranslator.LabelNamer{}
+		// Legacy behavior using AddMetricSuffixes, UTF-8 escaping always enabled
+		return config.AddMetricSuffixes, true
 	}
 }
 
 // getEffectiveAddMetricSuffixes returns the effective addMetricSuffixes value based on the configuration
 func getEffectiveAddMetricSuffixes(config *Config) bool {
-	if translationStrategyFeatureGate.IsEnabled() {
-		switch config.TranslationStrategy {
-		case UnderscoreEscapingWithSuffixes, NoUTF8EscapingWithSuffixes:
-			return true
-		case UnderscoreEscapingWithoutSuffixes, NoTranslation:
-			return false
-		default:
-			return true // Fallback to default
-		}
-	} else {
-		return config.AddMetricSuffixes
-	}
+	withSuffixes, _ := getTranslationConfiguration(config)
+	return withSuffixes
 }
 
 func convertExemplars(exemplars pmetric.ExemplarSlice) []prometheus.Exemplar {

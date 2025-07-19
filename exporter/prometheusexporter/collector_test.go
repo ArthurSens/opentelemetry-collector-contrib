@@ -989,3 +989,88 @@ func TestGetEffectiveAddMetricSuffixes(t *testing.T) {
 		})
 	}
 }
+
+func TestGetTranslationConfiguration(t *testing.T) {
+	tests := []struct {
+		name                string
+		config              *Config
+		featureGateEnabled  bool
+		expectedSuffixes    bool
+		expectedUTF8Escaping bool
+	}{
+		{
+			name: "Legacy mode with add_metric_suffixes true",
+			config: &Config{
+				AddMetricSuffixes: true,
+			},
+			featureGateEnabled:   false,
+			expectedSuffixes:     true,
+			expectedUTF8Escaping: true,
+		},
+		{
+			name: "Legacy mode with add_metric_suffixes false",
+			config: &Config{
+				AddMetricSuffixes: false,
+			},
+			featureGateEnabled:   false,
+			expectedSuffixes:     false,
+			expectedUTF8Escaping: true,
+		},
+		{
+			name: "Translation strategy UnderscoreEscapingWithSuffixes",
+			config: &Config{
+				TranslationStrategy: UnderscoreEscapingWithSuffixes,
+			},
+			featureGateEnabled:   true,
+			expectedSuffixes:     true,
+			expectedUTF8Escaping: true,
+		},
+		{
+			name: "Translation strategy UnderscoreEscapingWithoutSuffixes",
+			config: &Config{
+				TranslationStrategy: UnderscoreEscapingWithoutSuffixes,
+			},
+			featureGateEnabled:   true,
+			expectedSuffixes:     false,
+			expectedUTF8Escaping: true,
+		},
+		{
+			name: "Translation strategy NoUTF8EscapingWithSuffixes",
+			config: &Config{
+				TranslationStrategy: NoUTF8EscapingWithSuffixes,
+			},
+			featureGateEnabled:   true,
+			expectedSuffixes:     true,
+			expectedUTF8Escaping: false,
+		},
+		{
+			name: "Translation strategy NoTranslation",
+			config: &Config{
+				TranslationStrategy: NoTranslation,
+			},
+			featureGateEnabled:   true,
+			expectedSuffixes:     false,
+			expectedUTF8Escaping: false,
+		},
+		{
+			name: "Invalid strategy with feature gate enabled",
+			config: &Config{
+				TranslationStrategy: "InvalidStrategy",
+			},
+			featureGateEnabled:   true,
+			expectedSuffixes:     true,
+			expectedUTF8Escaping: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set feature gate state
+			defer testutil.SetFeatureGateForTest(t, translationStrategyFeatureGate, tt.featureGateEnabled)()
+
+			withSuffixes, withUTF8Escaping := getTranslationConfiguration(tt.config)
+			assert.Equal(t, tt.expectedSuffixes, withSuffixes)
+			assert.Equal(t, tt.expectedUTF8Escaping, withUTF8Escaping)
+		})
+	}
+}
