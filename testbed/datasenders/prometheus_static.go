@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -50,8 +51,9 @@ func (s *prometheusStaticSender) Start() error {
 	})
 
 	s.server = &http.Server{
-		Addr:    s.GetEndpoint().String(),
-		Handler: handler,
+		Addr:              s.GetEndpoint().String(),
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 	ln, err := net.Listen("tcp", s.server.Addr)
 	if err != nil {
