@@ -59,18 +59,6 @@ func TestPrometheusReceiver(t *testing.T) {
 			},
 		},
 		{
-			name: "WithScopeInfo/10k",
-			payload: datasenders.PrometheusStaticPayloadConfig{
-				SeriesCount:     10000,
-				LabelsPerSeries: 5,
-				WithScopeInfo:   true,
-			},
-			resourceSpec: testbed.ResourceSpec{
-				ExpectedMaxCPU: 200,
-				ExpectedMaxRAM: 400,
-			},
-		},
-		{
 			name: "NativeHistogram/10k",
 			payload: datasenders.PrometheusStaticPayloadConfig{
 				SeriesCount:          10000,

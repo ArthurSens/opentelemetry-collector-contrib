@@ -20,7 +20,6 @@ type PrometheusStaticPayloadConfig struct {
 	SeriesCount          int
 	LabelsPerSeries      int
 	WithTargetInfo       bool
-	WithScopeInfo        bool
 	WithNativeHistograms bool
 }
 
@@ -103,25 +102,6 @@ func buildRegistry(cfg PrometheusStaticPayloadConfig) *prometheus.Registry {
 		reg.MustRegister(targetInfo)
 	}
 
-	constLabels := prometheus.Labels{}
-	if cfg.WithScopeInfo {
-		scopeInfo := prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "otel_scope_info",
-			Help: "Scope metadata",
-			ConstLabels: prometheus.Labels{
-				"otel_scope_name":    "bench.scope",
-				"otel_scope_version": "1.0",
-				"scope_attribute":    "bench_value",
-			},
-		})
-		scopeInfo.Set(1)
-		reg.MustRegister(scopeInfo)
-
-		// All regular metrics must carry matching scope labels for correlation to trigger.
-		constLabels["otel_scope_name"] = "bench.scope"
-		constLabels["otel_scope_version"] = "1.0"
-	}
-
 	labelsPerSeries := cfg.LabelsPerSeries
 	if labelsPerSeries <= 0 {
 		labelsPerSeries = 5
@@ -139,11 +119,10 @@ func buildRegistry(cfg PrometheusStaticPayloadConfig) *prometheus.Registry {
 			h := prometheus.NewHistogram(prometheus.HistogramOpts{
 				Name:                            name,
 				Help:                            fmt.Sprintf("Benchmark histogram %d", i),
-				ConstLabels:                     constLabels,
-				NativeHistogramBucketFactor:      1.1,
-				NativeHistogramMaxBucketNumber:   100,
-				NativeHistogramMinResetDuration:  0,
-				NativeHistogramMaxZeroThreshold:  0.001,
+				NativeHistogramBucketFactor:     1.1,
+				NativeHistogramMaxBucketNumber:  100,
+				NativeHistogramMinResetDuration: 0,
+				NativeHistogramMaxZeroThreshold: 0.001,
 			})
 			h.Observe(float64(i) + 0.5)
 			reg.MustRegister(h)
@@ -153,9 +132,8 @@ func buildRegistry(cfg PrometheusStaticPayloadConfig) *prometheus.Registry {
 				labelValues[j] = fmt.Sprintf("value_%d_%d", i, j)
 			}
 			cv := prometheus.NewCounterVec(prometheus.CounterOpts{
-				Name:        name,
-				Help:        fmt.Sprintf("Benchmark counter %d", i),
-				ConstLabels: constLabels,
+				Name: name,
+				Help: fmt.Sprintf("Benchmark counter %d", i),
 			}, labelNames)
 			cv.WithLabelValues(labelValues...).Add(float64(i) + 1)
 			reg.MustRegister(cv)
