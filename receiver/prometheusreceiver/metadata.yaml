@@ -60,3 +60,11 @@ feature_gates:
     from_version: v0.89.0
     to_version: v0.141.0
     reference_url: https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/21909
+
+  - id: receiver.prometheusreceiver.UseScopeAttributeLabels
+    stage: alpha
+    description: >-
+      When enabled, scope attributes are read from `otel_scope_<attribute-name>`
+      labels and `otel_scope_info` is ignored.
+    from_version: v0.147.0
+    reference_url: https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/41502

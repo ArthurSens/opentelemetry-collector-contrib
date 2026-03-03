@@ -40,3 +40,11 @@ var ReceiverPrometheusreceiverUseCreatedMetricFeatureGate = featuregate.GlobalRe
 	featuregate.WithRegisterFromVersion("v0.89.0"),
 	featuregate.WithRegisterToVersion("v0.141.0"),
 )
+
+var ReceiverPrometheusreceiverUseScopeAttributeLabelsFeatureGate = featuregate.GlobalRegistry().MustRegister(
+	"receiver.prometheusreceiver.UseScopeAttributeLabels",
+	featuregate.StageAlpha,
+	featuregate.WithRegisterDescription("When enabled, scope attributes are read from `otel_scope_<attribute-name>` labels and `otel_scope_info` is ignored."),
+	featuregate.WithRegisterReferenceURL("https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/41502"),
+	featuregate.WithRegisterFromVersion("v0.147.0"),
+)
