@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"math"
+	"strings"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -56,6 +58,7 @@ type transaction struct {
 	externalLabels        labels.Labels
 	nodeResources         map[resourceKey]pcommon.Resource
 	scopeAttributes       map[resourceKey]map[scopeID]pcommon.Map
+	useScopeAttributes    bool
 	logger                *zap.Logger
 	buildInfo             component.BuildInfo
 	obsrecv               *receiverhelper.ObsReport
@@ -69,6 +72,7 @@ type scopeID struct {
 	name      string
 	version   string
 	schemaURL string
+	attrsHash uint64
 }
 
 func newTransaction(
@@ -81,19 +85,20 @@ func newTransaction(
 	useMetadata bool,
 ) *transaction {
 	return &transaction{
-		ctx:             ctx,
-		families:        make(map[resourceKey]map[scopeID]map[metricFamilyKey]*metricFamily),
-		isNew:           true,
-		trimSuffixes:    trimSuffixes,
-		useMetadata:     useMetadata,
-		sink:            sink,
-		externalLabels:  externalLabels,
-		logger:          settings.Logger,
-		buildInfo:       settings.BuildInfo,
-		obsrecv:         obsrecv,
-		bufBytes:        make([]byte, 0, 1024),
-		scopeAttributes: make(map[resourceKey]map[scopeID]pcommon.Map),
-		nodeResources:   map[resourceKey]pcommon.Resource{},
+		ctx:                ctx,
+		families:           make(map[resourceKey]map[scopeID]map[metricFamilyKey]*metricFamily),
+		isNew:              true,
+		trimSuffixes:       trimSuffixes,
+		useMetadata:        useMetadata,
+		sink:               sink,
+		externalLabels:     externalLabels,
+		logger:             settings.Logger,
+		buildInfo:          settings.BuildInfo,
+		obsrecv:            obsrecv,
+		bufBytes:           make([]byte, 0, 1024),
+		scopeAttributes:    make(map[resourceKey]map[scopeID]pcommon.Map),
+		useScopeAttributes: mdata.ReceiverPrometheusreceiverUseScopeAttributeLabelsFeatureGate.IsEnabled(),
+		nodeResources:      map[resourceKey]pcommon.Resource{},
 	}
 }
 
@@ -158,11 +163,17 @@ func (t *transaction) Append(_ storage.SeriesRef, ls labels.Labels, atMs int64, 
 
 	// For the `otel_scope_info` metric we need to convert it to scope attributes.
 	if metricName == prometheus.ScopeInfoMetricName {
+		if t.useScopeAttributes {
+			// In the new behavior, scope attributes are read from otel_scope_* labels.
+			// otel_scope_info is ignored.
+			return 0, nil
+		}
 		t.addScopeInfo(*rKey, ls)
 		return 0, nil
 	}
 
-	scope := getScopeID(ls)
+	scope, attrs := getScopeID(ls, t.useScopeAttributes)
+	t.addScopeAttributesFromLabels(*rKey, scope, attrs)
 
 	if value.IsStaleNaN(val) {
 		if t.detectAndStoreNativeHistogramStaleness(atMs, rKey, scope, metricName, ls) {
@@ -246,7 +257,7 @@ func (t *transaction) getOrCreateMetricFamily(key resourceKey, scope scopeID, mn
 		fnKey := metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: fn}
 		mf, ok := t.families[key][scope][fnKey]
 		if !ok || !mf.includesMetric(mn) {
-			curMf = newMetricFamily(mn, t.mc, t.logger, t.addingNativeHistogram, t.addingNHCB)
+			curMf = newMetricFamily(mn, t.mc, t.logger, t.addingNativeHistogram, t.addingNHCB, t.useScopeAttributes)
 			t.families[key][scope][metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: curMf.name}] = curMf
 			return curMf
 		}
@@ -278,7 +289,9 @@ func (t *transaction) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exe
 		return 0, errMetricNameNotFound
 	}
 
-	mf := t.getOrCreateMetricFamily(*rKey, getScopeID(l), mn)
+	scope, attrs := getScopeID(l, t.useScopeAttributes)
+	t.addScopeAttributesFromLabels(*rKey, scope, attrs)
+	mf := t.getOrCreateMetricFamily(*rKey, scope, mn)
 	mf.addExemplar(t.getSeriesRef(l, mf.mtype), e)
 
 	return 0, nil
@@ -329,7 +342,9 @@ func (t *transaction) AppendHistogram(_ storage.SeriesRef, ls labels.Labels, atM
 	// The `up`, `target_info`, `otel_scope_info` metrics should never generate native histograms,
 	// thus we don't check for them here as opposed to the Append function.
 
-	curMF := t.getOrCreateMetricFamily(*rKey, getScopeID(ls), metricName)
+	scope, attrs := getScopeID(ls, t.useScopeAttributes)
+	t.addScopeAttributesFromLabels(*rKey, scope, attrs)
+	curMF := t.getOrCreateMetricFamily(*rKey, scope, metricName)
 	seriesRef := t.getSeriesRef(ls, curMF.mtype)
 	cacheRef := ls.Hash()
 
@@ -405,7 +420,9 @@ func (t *transaction) setStartTimestamp(ls labels.Labels, atMs, stMs int64) (sto
 		return 0, errMetricNameNotFound
 	}
 
-	curMF := t.getOrCreateMetricFamily(*rKey, getScopeID(ls), metricName)
+	scope, attrs := getScopeID(ls, t.useScopeAttributes)
+	t.addScopeAttributesFromLabels(*rKey, scope, attrs)
+	curMF := t.getOrCreateMetricFamily(*rKey, scope, metricName)
 
 	seriesRef := t.getSeriesRef(ls, curMF.mtype)
 	curMF.addCreationTimestamp(seriesRef, ls, atMs, stMs)
@@ -419,7 +436,11 @@ func (*transaction) SetOptions(_ *storage.AppendOptions) {
 
 func (t *transaction) getSeriesRef(ls labels.Labels, mtype pmetric.MetricType) uint64 {
 	var hash uint64
-	hash, t.bufBytes = getSeriesRef(t.bufBytes, ls, mtype)
+	if t.useScopeAttributes {
+		hash, t.bufBytes = getSeriesRefWithoutScopeLabels(t.bufBytes, ls, mtype)
+	} else {
+		hash, t.bufBytes = getSeriesRef(t.bufBytes, ls, mtype)
+	}
 	return hash
 }
 
@@ -457,8 +478,6 @@ func (t *transaction) getMetrics() (pmetric.Metrics, error) {
 				if scope.schemaURL != "" {
 					ils.SetSchemaUrl(scope.schemaURL)
 				}
-				// If we got an otel_scope_info metric for that scope, get scope
-				// attributes from it.
 				if scopeAttributes, ok := t.scopeAttributes[rKey]; ok {
 					if attributes, ok := scopeAttributes[scope]; ok {
 						attributes.CopyTo(ils.Scope().Attributes())
@@ -489,20 +508,66 @@ func (t *transaction) getMetrics() (pmetric.Metrics, error) {
 	return md, nil
 }
 
-func getScopeID(ls labels.Labels) scopeID {
+func getScopeID(ls labels.Labels, withAttributes bool) (scopeID, pcommon.Map) {
 	var scope scopeID
+	attrs := pcommon.NewMap()
 	ls.Range(func(lbl labels.Label) {
 		if lbl.Name == prometheus.ScopeNameLabelKey {
 			scope.name = lbl.Value
+			return
 		}
 		if lbl.Name == prometheus.ScopeVersionLabelKey {
 			scope.version = lbl.Value
+			return
 		}
 		if lbl.Name == prometheus.ScopeSchemaURLLabelKey {
 			scope.schemaURL = lbl.Value
+			return
+		}
+		if !withAttributes || !strings.HasPrefix(lbl.Name, prometheus.ScopeLabelPrefix) {
+			return
 		}
 	})
-	return scope
+	if withAttributes {
+		scope.attrsHash = scopeAttributesHashFromLabels(ls, &attrs)
+	}
+	return scope, attrs
+}
+
+func scopeAttributesHashFromLabels(ls labels.Labels, attrs *pcommon.Map) uint64 {
+	h := fnv.New64a()
+	ls.Range(func(lbl labels.Label) {
+		if !strings.HasPrefix(lbl.Name, prometheus.ScopeLabelPrefix) {
+			return
+		}
+		if lbl.Name == prometheus.ScopeNameLabelKey || lbl.Name == prometheus.ScopeVersionLabelKey || lbl.Name == prometheus.ScopeSchemaURLLabelKey {
+			return
+		}
+		attrKey := strings.TrimPrefix(lbl.Name, prometheus.ScopeLabelPrefix)
+		if attrs != nil {
+			attrs.PutStr(attrKey, lbl.Value)
+		}
+		_, _ = h.Write([]byte(attrKey))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(lbl.Value))
+		_, _ = h.Write([]byte{0})
+	})
+	return h.Sum64()
+}
+
+func (t *transaction) addScopeAttributesFromLabels(key resourceKey, scope scopeID, attrs pcommon.Map) {
+	if !t.useScopeAttributes || attrs.Len() == 0 {
+		return
+	}
+	if _, ok := t.scopeAttributes[key]; !ok {
+		t.scopeAttributes[key] = make(map[scopeID]pcommon.Map)
+	}
+	if _, exists := t.scopeAttributes[key][scope]; exists {
+		return
+	}
+	copied := pcommon.NewMap()
+	attrs.CopyTo(copied)
+	t.scopeAttributes[key][scope] = copied
 }
 
 func (t *transaction) initTransaction(lbs labels.Labels) (*resourceKey, error) {
@@ -639,4 +704,8 @@ func (t *transaction) addScopeInfo(key resourceKey, ls labels.Labels) {
 
 func getSeriesRef(bytes []byte, ls labels.Labels, mtype pmetric.MetricType) (uint64, []byte) {
 	return ls.HashWithoutLabels(bytes, getSortedNotUsefulLabels(mtype)...)
+}
+
+func getSeriesRefWithoutScopeLabels(bytes []byte, ls labels.Labels, mtype pmetric.MetricType) (uint64, []byte) {
+	return ls.HashWithoutLabels(bytes, getSortedNotUsefulLabelsForSeries(mtype, ls)...)
 }
