@@ -524,9 +524,6 @@ func getScopeID(ls labels.Labels, withAttributes bool) (scopeID, pcommon.Map) {
 			scope.schemaURL = lbl.Value
 			return
 		}
-		if !withAttributes || !strings.HasPrefix(lbl.Name, prometheus.ScopeLabelPrefix) {
-			return
-		}
 	})
 	if withAttributes {
 		scope.attrsHash = scopeAttributesHashFromLabels(ls, &attrs)

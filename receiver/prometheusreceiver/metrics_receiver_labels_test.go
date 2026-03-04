@@ -938,7 +938,7 @@ func verifyScopeAttributeLabelsEnabled(t *testing.T, td *testData, rms []pmetric
 			filtered = append(filtered, sm)
 		}
 	}
-	require.Equal(t, 2, len(filtered), "Two scope metrics should be present for scope.with.attributes")
+	require.Len(t, filtered, 2, "Two scope metrics should be present for scope.with.attributes")
 	animals := map[string]pmetric.ScopeMetrics{}
 	for _, sm := range filtered {
 		require.Equal(t, "scope.with.attributes", sm.Scope().Name())
@@ -975,7 +975,7 @@ func verifyScopeAttributeLabelsDisabled(t *testing.T, td *testData, rms []pmetri
 			filtered = append(filtered, sm)
 		}
 	}
-	require.Equal(t, 1, len(filtered), "One scope metric should be present for scope.with.attributes when feature gate is disabled")
+	require.Len(t, filtered, 1, "One scope metric should be present for scope.with.attributes when feature gate is disabled")
 
 	sm := filtered[0]
 	require.Equal(t, "scope.with.attributes", sm.Scope().Name())
