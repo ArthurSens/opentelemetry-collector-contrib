@@ -26,26 +26,24 @@ import (
 type metricFamily struct {
 	mtype pmetric.MetricType
 	// isMonotonic only applies to sums
-	isMonotonic      bool
-	groups           map[uint64]*metricGroup
-	name             string
-	metadata         *scrape.MetricMetadata
-	stripScopeLabels bool
-	groupOrders      []*metricGroup
+	isMonotonic bool
+	groups      map[uint64]*metricGroup
+	name        string
+	metadata    *scrape.MetricMetadata
+	groupOrders []*metricGroup
 }
 
 // metricGroup, represents a single metric of a metric family. for example a histogram metric is usually represent by
 // a couple data complexValue (buckets and count/sum), a group of a metric family always share a same set of tags. for
 // simple types like counter and gauge, each data point is a group of itself
 type metricGroup struct {
-	mtype            pmetric.MetricType
-	ts               int64
-	ls               labels.Labels
-	stripScopeLabels bool
-	count            float64
-	hasCount         bool
-	sum              float64
-	hasSum           bool
+	mtype    pmetric.MetricType
+	ts       int64
+	ls       labels.Labels
+	count    float64
+	hasCount bool
+	sum      float64
+	hasSum   bool
 	// This corresponds to the `_created` sample found from the metric parsing.
 	// - https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#timestamps
 	// - https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#counter-1
@@ -59,7 +57,7 @@ type metricGroup struct {
 	isNHCB         bool // true if this is a Native Histogram Custom Buckets (schema -53)
 }
 
-func newMetricFamily(metricName string, mc scrape.MetricMetadataStore, logger *zap.Logger, isNativeHistogram, isNHCB, stripScopeLabels bool) *metricFamily {
+func newMetricFamily(metricName string, mc scrape.MetricMetadataStore, logger *zap.Logger, isNativeHistogram, isNHCB bool) *metricFamily {
 	metadata, familyName := metadataForMetric(metricName, mc)
 	// Native histograms have intrinsic metric type, use it,
 	// regardless of what metadata says.
@@ -73,12 +71,11 @@ func newMetricFamily(metricName string, mc scrape.MetricMetadataStore, logger *z
 	}
 
 	return &metricFamily{
-		mtype:            mtype,
-		isMonotonic:      isMonotonic,
-		groups:           make(map[uint64]*metricGroup),
-		name:             familyName,
-		metadata:         metadata,
-		stripScopeLabels: stripScopeLabels,
+		mtype:       mtype,
+		isMonotonic: isMonotonic,
+		groups:      make(map[uint64]*metricGroup),
+		name:        familyName,
+		metadata:    metadata,
 	}
 }
 
@@ -187,7 +184,7 @@ func (mg *metricGroup) toDistributionPoint(dest pmetric.HistogramDataPointSlice)
 		point.SetStartTimestamp(timestampFromFloat64(mg.createdSeconds))
 	}
 	point.SetTimestamp(tsNanos)
-	populateAttributes(pmetric.MetricTypeHistogram, mg.ls, point.Attributes(), mg.stripScopeLabels)
+	populateAttributes(pmetric.MetricTypeHistogram, mg.ls, point.Attributes())
 	mg.setExemplars(point.Exemplars())
 }
 
@@ -262,7 +259,7 @@ func (mg *metricGroup) toExponentialHistogramDataPoints(dest pmetric.Exponential
 		point.SetStartTimestamp(timestampFromFloat64(mg.createdSeconds))
 	}
 	point.SetTimestamp(tsNanos)
-	populateAttributes(pmetric.MetricTypeHistogram, mg.ls, point.Attributes(), mg.stripScopeLabels)
+	populateAttributes(pmetric.MetricTypeHistogram, mg.ls, point.Attributes())
 	mg.setExemplars(point.Exemplars())
 }
 
@@ -399,7 +396,7 @@ func (mg *metricGroup) toSummaryPoint(dest pmetric.SummaryDataPointSlice) {
 	if mg.createdSeconds != 0 {
 		point.SetStartTimestamp(timestampFromFloat64(mg.createdSeconds))
 	}
-	populateAttributes(pmetric.MetricTypeSummary, mg.ls, point.Attributes(), mg.stripScopeLabels)
+	populateAttributes(pmetric.MetricTypeSummary, mg.ls, point.Attributes())
 }
 
 func (mg *metricGroup) toNumberDataPoint(dest pmetric.NumberDataPointSlice) {
@@ -420,11 +417,11 @@ func (mg *metricGroup) toNumberDataPoint(dest pmetric.NumberDataPointSlice) {
 	} else {
 		point.SetDoubleValue(mg.value)
 	}
-	populateAttributes(pmetric.MetricTypeGauge, mg.ls, point.Attributes(), mg.stripScopeLabels)
+	populateAttributes(pmetric.MetricTypeGauge, mg.ls, point.Attributes())
 	mg.setExemplars(point.Exemplars())
 }
 
-func populateAttributes(mType pmetric.MetricType, ls labels.Labels, dest pcommon.Map, stripScopeLabels bool) {
+func populateAttributes(mType pmetric.MetricType, ls labels.Labels, dest pcommon.Map) {
 	dest.EnsureCapacity(ls.Len())
 	names := getSortedNotUsefulLabels(mType)
 	j := 0
@@ -435,7 +432,7 @@ func populateAttributes(mType pmetric.MetricType, ls labels.Labels, dest pcommon
 		if j < len(names) && l.Name == names[j] {
 			return
 		}
-		if stripScopeLabels && strings.HasPrefix(l.Name, prometheus.ScopeLabelPrefix) {
+		if strings.HasPrefix(l.Name, prometheus.ScopeLabelPrefix) {
 			return
 		}
 		if l.Value == "" {
@@ -450,11 +447,10 @@ func (mf *metricFamily) loadMetricGroupOrCreate(groupKey uint64, ls labels.Label
 	mg, ok := mf.groups[groupKey]
 	if !ok {
 		mg = &metricGroup{
-			mtype:            mf.mtype,
-			ts:               ts,
-			ls:               ls,
-			stripScopeLabels: mf.stripScopeLabels,
-			exemplars:        pmetric.NewExemplarSlice(),
+			mtype:     mf.mtype,
+			ts:        ts,
+			ls:        ls,
+			exemplars: pmetric.NewExemplarSlice(),
 		}
 		mf.groups[groupKey] = mg
 		// maintaining data insertion order is helpful to generate stable/reproducible metric output
