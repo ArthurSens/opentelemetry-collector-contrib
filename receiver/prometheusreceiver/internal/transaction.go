@@ -508,15 +508,14 @@ func getScopeID(ls labels.Labels) (scopeID, pcommon.Map) {
 	var scope scopeID
 	attrs := pcommon.NewMap()
 	ls.Range(func(lbl labels.Label) {
-		if lbl.Name == prometheus.ScopeNameLabelKey {
+		switch lbl.Name {
+		case prometheus.ScopeNameLabelKey:
 			scope.name = lbl.Value
 			return
-		}
-		if lbl.Name == prometheus.ScopeVersionLabelKey {
+		case prometheus.ScopeVersionLabelKey:
 			scope.version = lbl.Value
 			return
-		}
-		if lbl.Name == prometheus.ScopeSchemaURLLabelKey {
+		case prometheus.ScopeSchemaURLLabelKey:
 			scope.schemaURL = lbl.Value
 			return
 		}
