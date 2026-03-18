@@ -35,6 +35,20 @@ fi
 
 mkdir -p "${SESSION_DIR}"
 
+cleanup_research_outputs() {
+  local path=""
+
+  rm -rf "${TESTBED_DIR}/results"
+
+  shopt -s nullglob
+  for path in "${RUNS_DIR}"/*; do
+    [[ "${path}" == "${SESSION_DIR}" ]] && continue
+    [[ -d "${path}" ]] || continue
+    rm -rf "${path}"
+  done
+  shopt -u nullglob
+}
+
 path_is_ignored_generated() {
   local path="$1"
 
@@ -409,6 +423,7 @@ main() {
 
   summarize_session
   post_compare_git_action
+  cleanup_research_outputs
 
   echo
   echo "Session results written to ${SESSION_DIR}"

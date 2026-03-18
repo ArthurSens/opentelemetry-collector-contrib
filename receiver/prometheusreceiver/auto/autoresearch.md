@@ -39,12 +39,6 @@ From `receiver/prometheusreceiver`:
 HYPOTHESIS=my-change ./auto/autoresearch.sh compare
 ```
 
-`compare` is a one-hypothesis accept/reject loop:
-
-- `pareto_win`: commit the hypothesis automatically on the current branch
-- `pareto_neutral`: discard the hypothesis changes automatically
-- `pareto_regression`: discard the hypothesis changes automatically
-
 Environment overrides:
 
 - `TRIALS` defaults to `5`
@@ -53,40 +47,8 @@ Environment overrides:
 - `SESSION_NAME=name` overrides the output directory suffix
 - `HYPOTHESIS=name` is required for `compare`
 
-Outputs:
-
-- `auto/baseline.json` stores baseline means, variance, and noise thresholds
-- `auto/out/<session>/summary.json` stores per-run and aggregate results
-- `auto/out/<session>/<harness>/trial-*/cpu.prof` preserves one CPU profile per run
-
-## Correctness Gate
-Before benchmarking, all tests in `receiver/prometheusreceiver` must pass:
-
-```bash
-go test ./...
-```
-
-Any test failure invalidates the experiment.
-
-The workflow also forbids changes to any Prometheus receiver test files. If any
-`*_test.go` file under `receiver/prometheusreceiver` is modified or added, the
-runner exits before benchmarking.
-
-## Decision Logic
-Keep an experiment only if:
-
-- `cpu_percentage_avg` does not regress beyond the baseline noise threshold on any harness
-- `ram_mib_avg` does not regress beyond the baseline noise threshold on any harness
-- at least one harness shows a meaningful CPU or RAM improvement beyond the noise threshold
-
-If there are regressions on any harness, discard the experiment.
-If there are no regressions and no meaningful improvements, treat it as neutral.
-
-Noise thresholds are derived from the baseline variance and stored in
-`auto/baseline.json`.
-
 ## Hypothesis Source
-Start with the saved `cpu.prof` artifacts from the harness runs.
+Start with the latest saved `cpu.prof` artifacts from the harness runs.
 
 Use `go tool pprof -top` first, then follow up with narrower views such as
 `list` and `weblist` for the hottest functions. Derive experiment ideas from
@@ -107,6 +69,3 @@ Out of scope:
 
 ## Notes
 - The testbed already writes a valid collector CPU profile to `cpu.prof`.
-- The runner uses `testbed/tests/results/benchmarks.json` as the source of
-  truth for average CPU and average RAM.
-- Use `-count=1` behavior via the runner to avoid Go test cache effects.
