@@ -14,6 +14,11 @@ vendor/
 
 # Cursor
 .cursor
+!.cursor/
+!.cursor/skills/
+!.cursor/skills/prometheus-autoresearch/
+!.cursor/skills/prometheus-autoresearch/SKILL.md
+!.cursor/skills/prometheus-autoresearch/reference.md
 
 # Project IDX
 .idx/
