@@ -50,6 +50,7 @@ type transaction struct {
 	addingNativeHistogram bool // true if the last sample was a native histogram.
 	addingNHCB            bool // true if the last sample was a NHCB.
 	ctx                   context.Context
+	target                *scrape.Target
 	families              map[resourceKey]map[scopeID]map[metricFamilyKey]*metricFamily
 	mc                    scrape.MetricMetadataStore
 	sink                  consumer.Metrics
@@ -506,17 +507,23 @@ func getScopeID(ls labels.Labels) scopeID {
 }
 
 func (t *transaction) initTransaction(lbs labels.Labels) (*resourceKey, error) {
-	target, ok := scrape.TargetFromContext(t.ctx)
-	if !ok {
-		return nil, errors.New("unable to find target in context")
-	}
-	if t.useMetadata {
-		t.mc, ok = scrape.MetricMetadataStoreFromContext(t.ctx)
+	if t.target == nil {
+		target, ok := scrape.TargetFromContext(t.ctx)
 		if !ok {
-			return nil, errors.New("unable to find MetricMetadataStore in context")
+			return nil, errors.New("unable to find target in context")
 		}
-	} else {
-		t.mc = &emptyMetadataStore{}
+		t.target = target
+	}
+	if t.mc == nil {
+		if t.useMetadata {
+			mc, ok := scrape.MetricMetadataStoreFromContext(t.ctx)
+			if !ok {
+				return nil, errors.New("unable to find MetricMetadataStore in context")
+			}
+			t.mc = mc
+		} else {
+			t.mc = &emptyMetadataStore{}
+		}
 	}
 
 	rKey, err := t.getJobAndInstance(lbs)
@@ -524,7 +531,7 @@ func (t *transaction) initTransaction(lbs labels.Labels) (*resourceKey, error) {
 		return nil, err
 	}
 	if _, ok := t.nodeResources[*rKey]; !ok {
-		t.nodeResources[*rKey] = CreateResource(rKey.job, rKey.instance, target.DiscoveredLabels(labels.NewBuilder(labels.EmptyLabels())))
+		t.nodeResources[*rKey] = CreateResource(rKey.job, rKey.instance, t.target.DiscoveredLabels(labels.NewBuilder(labels.EmptyLabels())))
 	}
 
 	t.isNew = false
@@ -546,12 +553,12 @@ func (t *transaction) getJobAndInstance(labels labels.Labels) (*resourceKey, err
 	// this can be the case for, e.g., aggregated metrics coming from a federate endpoint
 	// that represent the whole cluster, rather than an individual workload.
 	// See https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/32555 for reference
-	if target, ok := scrape.TargetFromContext(t.ctx); ok {
+	if t.target != nil {
 		if job == "" {
-			job = target.GetValue(model.JobLabel)
+			job = t.target.GetValue(model.JobLabel)
 		}
 		if instance == "" {
-			instance = target.GetValue(model.InstanceLabel)
+			instance = t.target.GetValue(model.InstanceLabel)
 		}
 		if job != "" && instance != "" {
 			return &resourceKey{
