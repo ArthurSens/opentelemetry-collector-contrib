@@ -423,19 +423,27 @@ func (mg *metricGroup) toNumberDataPoint(dest pmetric.NumberDataPointSlice) {
 
 func populateAttributes(mType pmetric.MetricType, ls labels.Labels, dest pcommon.Map) {
 	dest.EnsureCapacity(ls.Len())
-	names := getSortedNotUsefulLabels(mType)
-	j := 0
 	ls.Range(func(l labels.Label) {
-		for j < len(names) && names[j] < l.Name {
-			j++
-		}
-		if j < len(names) && l.Name == names[j] {
-			return
-		}
 		if l.Value == "" {
 			// empty label values should be omitted
 			return
 		}
+
+		switch l.Name {
+		case model.MetricNameLabel, model.InstanceLabel, model.SchemeLabel,
+			model.MetricsPathLabel, model.JobLabel,
+			prometheus.ScopeNameLabelKey, prometheus.ScopeVersionLabelKey, prometheus.ScopeSchemaURLLabelKey:
+			return
+		case model.BucketLabel:
+			if mType == pmetric.MetricTypeHistogram {
+				return
+			}
+		case model.QuantileLabel:
+			if mType == pmetric.MetricTypeSummary {
+				return
+			}
+		}
+
 		dest.PutStr(l.Name, l.Value)
 	})
 }
