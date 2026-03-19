@@ -124,10 +124,23 @@ func convToMetricType(metricType model.MetricType, exponentialHistogram bool) (p
 }
 
 func normalizeMetricName(name string) string {
-	for _, s := range trimmableSuffixes {
-		if strings.HasSuffix(name, s) && name != s {
-			return strings.TrimSuffix(name, s)
-		}
+	if strings.HasSuffix(name, metricsSuffixBucket) && len(name) > len(metricsSuffixBucket) {
+		return strings.TrimSuffix(name, metricsSuffixBucket)
+	}
+	if strings.HasSuffix(name, metricsSuffixCount) && len(name) > len(metricsSuffixCount) {
+		return strings.TrimSuffix(name, metricsSuffixCount)
+	}
+	if strings.HasSuffix(name, metricsSuffixSum) && len(name) > len(metricsSuffixSum) {
+		return strings.TrimSuffix(name, metricsSuffixSum)
+	}
+	if strings.HasSuffix(name, metricSuffixTotal) && len(name) > len(metricSuffixTotal) {
+		return strings.TrimSuffix(name, metricSuffixTotal)
+	}
+	if strings.HasSuffix(name, metricSuffixInfo) && len(name) > len(metricSuffixInfo) {
+		return strings.TrimSuffix(name, metricSuffixInfo)
+	}
+	if strings.HasSuffix(name, metricSuffixCreated) && len(name) > len(metricSuffixCreated) {
+		return strings.TrimSuffix(name, metricSuffixCreated)
 	}
 	return name
 }
