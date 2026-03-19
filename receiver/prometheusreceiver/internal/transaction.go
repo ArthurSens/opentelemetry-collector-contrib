@@ -626,22 +626,18 @@ func (t *transaction) addScopeInfo(key resourceKey, ls labels.Labels) {
 	attrs := pcommon.NewMap()
 	scope := scopeID{}
 	ls.Range(func(lbl labels.Label) {
-		if lbl.Name == model.JobLabel || lbl.Name == model.InstanceLabel || lbl.Name == model.MetricNameLabel {
+		switch lbl.Name {
+		case model.JobLabel, model.InstanceLabel, model.MetricNameLabel:
 			return
-		}
-		if lbl.Name == prometheus.ScopeNameLabelKey {
+		case prometheus.ScopeNameLabelKey:
 			scope.name = lbl.Value
-			return
-		}
-		if lbl.Name == prometheus.ScopeVersionLabelKey {
+		case prometheus.ScopeVersionLabelKey:
 			scope.version = lbl.Value
-			return
-		}
-		if lbl.Name == prometheus.ScopeSchemaURLLabelKey {
+		case prometheus.ScopeSchemaURLLabelKey:
 			scope.schemaURL = lbl.Value
-			return
+		default:
+			attrs.PutStr(lbl.Name, lbl.Value)
 		}
-		attrs.PutStr(lbl.Name, lbl.Value)
 	})
 	if _, ok := t.scopeAttributes[key]; !ok {
 		t.scopeAttributes[key] = make(map[scopeID]pcommon.Map)
