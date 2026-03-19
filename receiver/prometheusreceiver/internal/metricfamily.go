@@ -76,6 +76,7 @@ func newMetricFamily(metricName string, mc scrape.MetricMetadataStore, logger *z
 		groups:      make(map[uint64]*metricGroup, 8),
 		name:        familyName,
 		metadata:    metadata,
+		groupOrders: make([]*metricGroup, 0, 8),
 	}
 }
 
