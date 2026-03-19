@@ -73,7 +73,7 @@ func newMetricFamily(metricName string, mc scrape.MetricMetadataStore, logger *z
 	return &metricFamily{
 		mtype:       mtype,
 		isMonotonic: isMonotonic,
-		groups:      make(map[uint64]*metricGroup),
+		groups:      make(map[uint64]*metricGroup, 8),
 		name:        familyName,
 		metadata:    metadata,
 	}
