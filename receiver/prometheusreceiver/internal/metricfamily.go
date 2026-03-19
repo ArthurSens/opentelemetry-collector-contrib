@@ -639,6 +639,7 @@ func (mf *metricFamily) appendMetric(metrics pmetric.MetricSlice, trimSuffixes b
 	default: // Everything else should be set to a Gauge.
 		gauge := metric.SetEmptyGauge()
 		gdpL := gauge.DataPoints()
+		gdpL.EnsureCapacity(len(mf.groupOrders))
 		for _, mg := range mf.groupOrders {
 			mg.toNumberDataPoint(gdpL)
 		}
