@@ -579,6 +579,9 @@ func (mf *metricFamily) addNHCBSeries(seriesRef uint64, metricName string, ls la
 }
 
 func (mf *metricFamily) appendMetric(metrics pmetric.MetricSlice, trimSuffixes bool) {
+	if len(mf.groupOrders) == 0 {
+		return
+	}
 	metric := pmetric.NewMetric()
 	// Trims type and unit suffixes from metric name
 	name := mf.name
