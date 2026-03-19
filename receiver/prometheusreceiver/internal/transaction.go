@@ -250,6 +250,9 @@ func (t *transaction) getOrCreateMetricFamily(key resourceKey, scope scopeID, mn
 
 	fnKey := metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: fn}
 	mf, ok := scopeFamilies[fnKey]
+	if ok && fn == mn {
+		return mf
+	}
 	if !ok || !mf.includesMetric(mn) {
 		curMf = newMetricFamily(mn, t.mc, t.logger, t.addingNativeHistogram, t.addingNHCB)
 		scopeFamilies[metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: curMf.name}] = curMf
