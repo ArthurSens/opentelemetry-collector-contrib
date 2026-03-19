@@ -441,6 +441,7 @@ func (t *transaction) getMetrics() (pmetric.Metrics, error) {
 		if !ok {
 			continue
 		}
+		resourceScopeAttributes := t.scopeAttributes[rKey]
 		rms := md.ResourceMetrics().AppendEmpty()
 		resource.CopyTo(rms.Resource())
 
@@ -460,10 +461,8 @@ func (t *transaction) getMetrics() (pmetric.Metrics, error) {
 				}
 				// If we got an otel_scope_info metric for that scope, get scope
 				// attributes from it.
-				if scopeAttributes, ok := t.scopeAttributes[rKey]; ok {
-					if attributes, ok := scopeAttributes[scope]; ok {
-						attributes.CopyTo(ils.Scope().Attributes())
-					}
+				if attributes, ok := resourceScopeAttributes[scope]; ok {
+					attributes.CopyTo(ils.Scope().Attributes())
 				}
 			}
 			metrics := ils.Metrics()
