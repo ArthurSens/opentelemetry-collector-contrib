@@ -498,13 +498,12 @@ func (t *transaction) getMetrics() (pmetric.Metrics, error) {
 func getScopeID(ls labels.Labels) scopeID {
 	var scope scopeID
 	ls.Range(func(lbl labels.Label) {
-		if lbl.Name == prometheus.ScopeNameLabelKey {
+		switch lbl.Name {
+		case prometheus.ScopeNameLabelKey:
 			scope.name = lbl.Value
-		}
-		if lbl.Name == prometheus.ScopeVersionLabelKey {
+		case prometheus.ScopeVersionLabelKey:
 			scope.version = lbl.Value
-		}
-		if lbl.Name == prometheus.ScopeSchemaURLLabelKey {
+		case prometheus.ScopeSchemaURLLabelKey:
 			scope.schemaURL = lbl.Value
 		}
 	})
