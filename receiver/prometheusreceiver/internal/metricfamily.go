@@ -458,6 +458,9 @@ func (mf *metricFamily) loadMetricGroupOrCreate(groupKey uint64, ls labels.Label
 			ls:        ls,
 			exemplars: pmetric.NewExemplarSlice(),
 		}
+		if mf.mtype == pmetric.MetricTypeHistogram || mf.mtype == pmetric.MetricTypeSummary {
+			mg.complexValue = make([]*dataPoint, 0, 8)
+		}
 		mf.groups[groupKey] = mg
 		// maintaining data insertion order is helpful to generate stable/reproducible metric output
 		mf.groupOrders = append(mf.groupOrders, mg)
