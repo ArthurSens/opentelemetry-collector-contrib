@@ -46,8 +46,9 @@ var internalMetricMetadata = map[string]*scrape.MetricMetadata{
 }
 
 func metadataForMetric(metricName string, mc scrape.MetricMetadataStore) (*scrape.MetricMetadata, string) {
-	if metadata, ok := internalMetricMetadata[metricName]; ok {
-		return metadata, metricName
+	switch metricName {
+	case scrapeUpMetricName, "scrape_duration_seconds", "scrape_samples_scraped", "scrape_series_added", "scrape_samples_post_metric_relabeling":
+		return internalMetricMetadata[metricName], metricName
 	}
 	if metadata, ok := mc.GetMetadata(metricName); ok {
 		return &metadata, metricName
