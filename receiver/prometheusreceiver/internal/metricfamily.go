@@ -600,6 +600,7 @@ func (mf *metricFamily) appendMetric(metrics pmetric.MetricSlice, trimSuffixes b
 		histogram := metric.SetEmptyHistogram()
 		histogram.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 		hdpL := histogram.DataPoints()
+		hdpL.EnsureCapacity(len(mf.groupOrders))
 		for _, mg := range mf.groupOrders {
 			mg.toDistributionPoint(hdpL)
 		}
