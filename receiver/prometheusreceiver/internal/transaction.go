@@ -223,37 +223,40 @@ func (t *transaction) detectAndStoreNativeHistogramStaleness(atMs int64, key *re
 // getOrCreateMetricFamily returns the metric family for the given metric name and scope,
 // and true if an existing family was found.
 func (t *transaction) getOrCreateMetricFamily(key resourceKey, scope scopeID, mn string) *metricFamily {
-	if _, ok := t.families[key]; !ok {
-		t.families[key] = make(map[scopeID]map[metricFamilyKey]*metricFamily)
+	resourceFamilies, ok := t.families[key]
+	if !ok {
+		resourceFamilies = make(map[scopeID]map[metricFamilyKey]*metricFamily)
+		t.families[key] = resourceFamilies
 	}
-	if _, ok := t.families[key][scope]; !ok {
-		t.families[key][scope] = make(map[metricFamilyKey]*metricFamily)
+	scopeFamilies, ok := resourceFamilies[scope]
+	if !ok {
+		scopeFamilies = make(map[metricFamilyKey]*metricFamily)
+		resourceFamilies[scope] = scopeFamilies
 	}
 
 	mfKey := metricFamilyKey{isExponentialHistogram: t.addingNativeHistogram, name: mn}
-
-	curMf, ok := t.families[key][scope][mfKey]
-
-	if !ok {
-		fn := mn
-		if _, ok := t.mc.GetMetadata(mn); !ok {
-			fn = normalizeMetricName(mn)
-			// NB (eriksywu): see https://github.com/prometheus/prometheus/issues/14823
-			if isCounterCreatedLine(mn, fn, t.mc) {
-				fn += metricSuffixTotal
-			}
-			// END NB (eriksywu)
-		}
-		fnKey := metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: fn}
-		mf, ok := t.families[key][scope][fnKey]
-		if !ok || !mf.includesMetric(mn) {
-			curMf = newMetricFamily(mn, t.mc, t.logger, t.addingNativeHistogram, t.addingNHCB)
-			t.families[key][scope][metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: curMf.name}] = curMf
-			return curMf
-		}
-		curMf = mf
+	curMf, ok := scopeFamilies[mfKey]
+	if ok {
+		return curMf
 	}
-	return curMf
+
+	fn := mn
+	if _, ok := t.mc.GetMetadata(mn); !ok {
+		fn = normalizeMetricName(mn)
+		if isCounterCreatedLine(mn, fn, t.mc) {
+			fn += metricSuffixTotal
+		}
+	}
+
+	fnKey := metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: fn}
+	mf, ok := scopeFamilies[fnKey]
+	if !ok || !mf.includesMetric(mn) {
+		curMf = newMetricFamily(mn, t.mc, t.logger, t.addingNativeHistogram, t.addingNHCB)
+		scopeFamilies[metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: curMf.name}] = curMf
+		return curMf
+	}
+
+	return mf
 }
 
 func (t *transaction) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
