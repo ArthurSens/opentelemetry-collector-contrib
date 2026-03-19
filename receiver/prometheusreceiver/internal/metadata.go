@@ -46,9 +46,8 @@ var internalMetricMetadata = map[string]*scrape.MetricMetadata{
 }
 
 func metadataForMetric(metricName string, mc scrape.MetricMetadataStore) (*scrape.MetricMetadata, string) {
-	switch metricName {
-	case scrapeUpMetricName, "scrape_duration_seconds", "scrape_samples_scraped", "scrape_series_added", "scrape_samples_post_metric_relabeling":
-		return internalMetricMetadata[metricName], metricName
+	if metadata, ok := internalMetricMetadata[metricName]; ok {
+		return metadata, metricName
 	}
 	if metadata, ok := mc.GetMetadata(metricName); ok {
 		return &metadata, metricName
@@ -56,6 +55,12 @@ func metadataForMetric(metricName string, mc scrape.MetricMetadataStore) (*scrap
 	// If we didn't find metadata with the original name,
 	// try with suffixes trimmed, in-case it is a "merged" metric type.
 	normalizedName := normalizeMetricName(metricName)
+	if normalizedName == metricName {
+		return &scrape.MetricMetadata{
+			MetricFamily: metricName,
+			Type:         model.MetricTypeUnknown,
+		}, metricName
+	}
 	if metadata, ok := mc.GetMetadata(normalizedName); ok {
 		if metadata.Type == model.MetricTypeCounter {
 			// NB (eriksywu): see https://github.com/prometheus/prometheus/issues/14823
