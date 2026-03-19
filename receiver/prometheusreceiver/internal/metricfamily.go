@@ -609,6 +609,7 @@ func (mf *metricFamily) appendMetric(metrics pmetric.MetricSlice, trimSuffixes b
 	case pmetric.MetricTypeSummary:
 		summary := metric.SetEmptySummary()
 		sdpL := summary.DataPoints()
+		sdpL.EnsureCapacity(len(mf.groupOrders))
 		for _, mg := range mf.groupOrders {
 			mg.toSummaryPoint(sdpL)
 		}
