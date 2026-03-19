@@ -105,7 +105,9 @@ func (mg *metricGroup) toDistributionPoint(dest pmetric.HistogramDataPointSlice)
 		return
 	}
 
-	mg.sortPoints()
+	if len(mg.complexValue) > 1 {
+		mg.sortPoints()
+	}
 
 	var bounds []float64
 	var bucketCounts []uint64
