@@ -364,7 +364,9 @@ func (mg *metricGroup) toSummaryPoint(dest pmetric.SummaryDataPointSlice) {
 		return
 	}
 
-	mg.sortPoints()
+	if len(mg.complexValue) > 1 {
+		mg.sortPoints()
+	}
 
 	point := dest.AppendEmpty()
 	pointIsStale := value.IsStaleNaN(mg.sum) || value.IsStaleNaN(mg.count)
