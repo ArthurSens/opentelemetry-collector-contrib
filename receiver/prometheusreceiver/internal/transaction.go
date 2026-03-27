@@ -162,12 +162,7 @@ func (t *transaction) Append(_ storage.SeriesRef, ls labels.Labels, atMs int64, 
 	}
 
 	// For the `otel_scope_info` metric we need to convert it to scope attributes.
-	if metricName == prometheus.ScopeInfoMetricName {
-		if t.ignoreScopeInfoMetric {
-			// Scope attributes are always read from otel_scope_* labels.
-			// The feature gate only controls whether otel_scope_info is ignored.
-			return 0, nil
-		}
+	if metricName == prometheus.ScopeInfoMetricName && !t.ignoreScopeInfoMetric {
 		t.addScopeInfo(*rKey, ls)
 		return 0, nil
 	}

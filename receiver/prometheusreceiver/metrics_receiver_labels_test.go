@@ -1031,11 +1031,29 @@ func verifyIgnoreScopeInfoMetricEnabled(t *testing.T, td *testData, rms []pmetri
 	require.Equal(t, "scope.with.info", scopeInfoScope.Scope().Name())
 	require.Equal(t, "v2.0.0", scopeInfoScope.Scope().Version())
 	require.Equal(t, 0, scopeInfoScope.Scope().Attributes().Len())
-	require.Equal(t, 1, scopeInfoScope.Metrics().Len())
-	dp := scopeInfoScope.Metrics().At(0).Gauge().DataPoints().At(0)
-	require.Equal(t, 1, dp.Attributes().Len())
-	_, found := dp.Attributes().Get("area")
+	require.Equal(t, 2, scopeInfoScope.Metrics().Len())
+
+	scopeMetricsByName := make(map[string]pmetric.Metric, scopeInfoScope.Metrics().Len())
+	for i := 0; i < scopeInfoScope.Metrics().Len(); i++ {
+		metric := scopeInfoScope.Metrics().At(i)
+		scopeMetricsByName[metric.Name()] = metric
+	}
+
+	oldStyleMetric, found := scopeMetricsByName["jvm_memory_bytes_used"]
 	require.True(t, found)
+	dp := oldStyleMetric.Gauge().DataPoints().At(0)
+	require.Equal(t, 1, dp.Attributes().Len())
+	_, found = dp.Attributes().Get("area")
+	require.True(t, found)
+
+	// otel_scope_info becomes a regular metric when the feature gate is enabled
+	scopeInfoMetric, found := scopeMetricsByName["otel_scope_info"]
+	require.True(t, found)
+	dp = scopeInfoMetric.Gauge().DataPoints().At(0)
+	require.Equal(t, 1, dp.Attributes().Len())
+	animal, found := dp.Attributes().Get("animal")
+	require.True(t, found)
+	require.Equal(t, "rabbit", animal.Str())
 }
 
 func verifyIgnoreScopeInfoMetricDisabled(t *testing.T, td *testData, rms []pmetric.ResourceMetrics) {
