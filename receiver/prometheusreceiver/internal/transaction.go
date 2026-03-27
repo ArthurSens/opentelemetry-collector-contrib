@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"math"
 	"strings"
 
@@ -27,6 +26,7 @@ import (
 	"go.opentelemetry.io/collector/receiver/receiverhelper"
 	"go.uber.org/zap"
 
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatautil"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus"
 	mdata "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/prometheusreceiver/internal/metadata"
 )
@@ -72,7 +72,7 @@ type scopeID struct {
 	name      string
 	version   string
 	schemaURL string
-	attrsHash uint64
+	attrsHash [16]byte
 }
 
 func newTransaction(
@@ -514,33 +514,14 @@ func getScopeID(ls labels.Labels) (scopeID, pcommon.Map) {
 			scope.schemaURL = lbl.Value
 			return
 		}
-	})
-	scope.attrsHash = scopeAttributesHashFromLabels(ls, &attrs)
-	if attrs.Len() == 0 {
-		scope.attrsHash = 0
-	}
-	return scope, attrs
-}
-
-func scopeAttributesHashFromLabels(ls labels.Labels, attrs *pcommon.Map) uint64 {
-	h := fnv.New64a()
-	ls.Range(func(lbl labels.Label) {
 		if !strings.HasPrefix(lbl.Name, prometheus.ScopeLabelPrefix) {
 			return
 		}
-		if lbl.Name == prometheus.ScopeNameLabelKey || lbl.Name == prometheus.ScopeVersionLabelKey || lbl.Name == prometheus.ScopeSchemaURLLabelKey {
-			return
-		}
 		attrKey := strings.TrimPrefix(lbl.Name, prometheus.ScopeLabelPrefix)
-		if attrs != nil {
-			attrs.PutStr(attrKey, lbl.Value)
-		}
-		_, _ = h.Write([]byte(attrKey))
-		_, _ = h.Write([]byte{0})
-		_, _ = h.Write([]byte(lbl.Value))
-		_, _ = h.Write([]byte{0})
+		attrs.PutStr(attrKey, lbl.Value)
 	})
-	return h.Sum64()
+	scope.attrsHash = pdatautil.MapHash(attrs)
+	return scope, attrs
 }
 
 func (t *transaction) addScopeAttributesFromLabels(key resourceKey, scope scopeID, attrs pcommon.Map) {
