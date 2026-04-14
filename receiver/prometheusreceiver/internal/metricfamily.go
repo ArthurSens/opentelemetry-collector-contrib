@@ -53,6 +53,7 @@ type metricGroup struct {
 	hValue         *histogram.Histogram
 	fhValue        *histogram.FloatHistogram
 	complexValue   []*dataPoint
+	complexOrdered bool
 	exemplars      pmetric.ExemplarSlice
 	isNHCB         bool // true if this is a Native Histogram Custom Buckets (schema -53)
 }
@@ -94,9 +95,13 @@ func (mf *metricFamily) includesMetric(metricName string) bool {
 }
 
 func (mg *metricGroup) sortPoints() {
+	if mg.complexOrdered {
+		return
+	}
 	sort.Slice(mg.complexValue, func(i, j int) bool {
 		return mg.complexValue[i].boundary < mg.complexValue[j].boundary
 	})
+	mg.complexOrdered = true
 }
 
 func (mg *metricGroup) toDistributionPoint(dest pmetric.HistogramDataPointSlice) {
@@ -447,10 +452,11 @@ func (mf *metricFamily) loadMetricGroupOrCreate(groupKey uint64, ls labels.Label
 	mg, ok := mf.groups[groupKey]
 	if !ok {
 		mg = &metricGroup{
-			mtype:     mf.mtype,
-			ts:        ts,
-			ls:        ls,
-			exemplars: pmetric.NewExemplarSlice(),
+			mtype:          mf.mtype,
+			ts:             ts,
+			ls:             ls,
+			complexOrdered: true,
+			exemplars:      pmetric.NewExemplarSlice(),
 		}
 		mf.groups[groupKey] = mg
 		// maintaining data insertion order is helpful to generate stable/reproducible metric output
@@ -481,6 +487,9 @@ func (mf *metricFamily) addSeries(seriesRef uint64, metricName string, ls labels
 			boundary, err := getBoundary(mf.mtype, ls)
 			if err != nil {
 				return err
+			}
+			if mg.complexOrdered && len(mg.complexValue) > 0 && boundary < mg.complexValue[len(mg.complexValue)-1].boundary {
+				mg.complexOrdered = false
 			}
 			mg.complexValue = append(mg.complexValue, &dataPoint{value: v, boundary: boundary})
 		}
