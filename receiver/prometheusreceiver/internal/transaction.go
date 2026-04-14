@@ -53,6 +53,8 @@ type transaction struct {
 	addingNHCB            bool // true if the last sample was a NHCB.
 	ctx                   context.Context
 	target                *scrape.Target
+	targetJob             string
+	targetInstance        string
 	families              map[resourceKey]map[scopeID]map[metricFamilyKey]*metricFamily
 	mc                    scrape.MetricMetadataStore
 	sink                  consumer.Metrics
@@ -574,6 +576,8 @@ func (t *transaction) initTransaction(lbs labels.Labels) (*resourceKey, error) {
 			return nil, errors.New("unable to find target in context")
 		}
 		t.target = target
+		t.targetJob = target.GetValue(model.JobLabel)
+		t.targetInstance = target.GetValue(model.InstanceLabel)
 		if t.useMetadata {
 			t.mc, ok = scrape.MetricMetadataStoreFromContext(t.ctx)
 			if !ok {
@@ -596,9 +600,17 @@ func (t *transaction) initTransaction(lbs labels.Labels) (*resourceKey, error) {
 	return rKey, nil
 }
 
-func (t *transaction) getJobAndInstance(labels labels.Labels) (*resourceKey, error) {
+func (t *transaction) getJobAndInstance(lbs labels.Labels) (*resourceKey, error) {
 	// first, try to get job and instance from the labels
-	job, instance := labels.Get(model.JobLabel), labels.Get(model.InstanceLabel)
+	var job, instance string
+	lbs.Range(func(lbl labels.Label) {
+		switch lbl.Name {
+		case model.JobLabel:
+			job = lbl.Value
+		case model.InstanceLabel:
+			instance = lbl.Value
+		}
+	})
 	if job != "" && instance != "" {
 		return &resourceKey{
 			job:      job,
@@ -613,10 +625,10 @@ func (t *transaction) getJobAndInstance(labels labels.Labels) (*resourceKey, err
 	// See https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/32555 for reference
 	if t.target != nil {
 		if job == "" {
-			job = t.target.GetValue(model.JobLabel)
+			job = t.targetJob
 		}
 		if instance == "" {
-			instance = t.target.GetValue(model.InstanceLabel)
+			instance = t.targetInstance
 		}
 		if job != "" && instance != "" {
 			return &resourceKey{
