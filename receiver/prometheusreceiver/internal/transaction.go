@@ -168,18 +168,20 @@ func (t *transaction) Append(_ storage.SeriesRef, ls labels.Labels, atMs int64, 
 		return 0, nil
 	}
 
-	scope, attrs := getScopeID(ls)
-	t.addScopeAttributesFromLabels(*rKey, scope, attrs)
+	scope, attrs, hasScopeAttrs := getScopeIDWithAttrs(ls)
+	if hasScopeAttrs {
+		t.addScopeAttributesFromLabels(*rKey, scope, attrs)
+	}
 
 	if value.IsStaleNaN(val) {
-		if t.detectAndStoreNativeHistogramStaleness(atMs, rKey, scope, metricName, ls) {
+		if t.detectAndStoreNativeHistogramStalenessWithScopeAttrs(atMs, rKey, scope, metricName, ls, hasScopeAttrs) {
 			return 0, nil
 		}
 	}
 
 	curMF := t.getOrCreateMetricFamily(*rKey, scope, metricName)
 
-	seriesRef := t.getSeriesRef(ls, curMF.mtype)
+	seriesRef := t.getSeriesRef(ls, curMF.mtype, hasScopeAttrs)
 	cacheRef := ls.Hash()
 	err = curMF.addSeries(seriesRef, metricName, ls, atMs, val)
 	if err != nil {
@@ -197,6 +199,10 @@ func (t *transaction) Append(_ storage.SeriesRef, ls labels.Labels, atMs int64, 
 // detectAndStoreNativeHistogramStaleness returns true if it detects
 // and stores a native histogram staleness marker.
 func (t *transaction) detectAndStoreNativeHistogramStaleness(atMs int64, key *resourceKey, scope scopeID, metricName string, ls labels.Labels) bool {
+	return t.detectAndStoreNativeHistogramStalenessWithScopeAttrs(atMs, key, scope, metricName, ls, hasScopeAttrs(ls))
+}
+
+func (t *transaction) detectAndStoreNativeHistogramStalenessWithScopeAttrs(atMs int64, key *resourceKey, scope scopeID, metricName string, ls labels.Labels, hasScopeAttrs bool) bool {
 	// Detect the special case of stale native histogram series.
 	// Currently Prometheus does not store the histogram type in
 	// its staleness tracker.
@@ -218,7 +224,7 @@ func (t *transaction) detectAndStoreNativeHistogramStaleness(atMs int64, key *re
 	t.addingNHCB = false
 
 	curMF := t.getOrCreateMetricFamily(*key, scope, metricName)
-	seriesRef := t.getSeriesRef(ls, curMF.mtype)
+	seriesRef := t.getSeriesRef(ls, curMF.mtype, hasScopeAttrs)
 
 	_ = curMF.addExponentialHistogramSeries(seriesRef, metricName, ls, atMs, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}, nil)
 	// ignore errors here, this is best effort.
@@ -285,10 +291,12 @@ func (t *transaction) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exe
 		return 0, errMetricNameNotFound
 	}
 
-	scope, attrs := getScopeID(l)
-	t.addScopeAttributesFromLabels(*rKey, scope, attrs)
+	scope, attrs, hasScopeAttrs := getScopeIDWithAttrs(l)
+	if hasScopeAttrs {
+		t.addScopeAttributesFromLabels(*rKey, scope, attrs)
+	}
 	mf := t.getOrCreateMetricFamily(*rKey, scope, mn)
-	mf.addExemplar(t.getSeriesRef(l, mf.mtype), e)
+	mf.addExemplar(t.getSeriesRef(l, mf.mtype, hasScopeAttrs), e)
 
 	return 0, nil
 }
@@ -338,10 +346,12 @@ func (t *transaction) AppendHistogram(_ storage.SeriesRef, ls labels.Labels, atM
 	// The `up`, `target_info`, `otel_scope_info` metrics should never generate native histograms,
 	// thus we don't check for them here as opposed to the Append function.
 
-	scope, attrs := getScopeID(ls)
-	t.addScopeAttributesFromLabels(*rKey, scope, attrs)
+	scope, attrs, hasScopeAttrs := getScopeIDWithAttrs(ls)
+	if hasScopeAttrs {
+		t.addScopeAttributesFromLabels(*rKey, scope, attrs)
+	}
 	curMF := t.getOrCreateMetricFamily(*rKey, scope, metricName)
-	seriesRef := t.getSeriesRef(ls, curMF.mtype)
+	seriesRef := t.getSeriesRef(ls, curMF.mtype, hasScopeAttrs)
 	cacheRef := ls.Hash()
 
 	if h != nil && h.CounterResetHint == histogram.GaugeType || fh != nil && fh.CounterResetHint == histogram.GaugeType {
@@ -416,11 +426,13 @@ func (t *transaction) setStartTimestamp(ls labels.Labels, atMs, stMs int64) (sto
 		return 0, errMetricNameNotFound
 	}
 
-	scope, attrs := getScopeID(ls)
-	t.addScopeAttributesFromLabels(*rKey, scope, attrs)
+	scope, attrs, hasScopeAttrs := getScopeIDWithAttrs(ls)
+	if hasScopeAttrs {
+		t.addScopeAttributesFromLabels(*rKey, scope, attrs)
+	}
 	curMF := t.getOrCreateMetricFamily(*rKey, scope, metricName)
 
-	seriesRef := t.getSeriesRef(ls, curMF.mtype)
+	seriesRef := t.getSeriesRef(ls, curMF.mtype, hasScopeAttrs)
 	curMF.addCreationTimestamp(seriesRef, ls, atMs, stMs)
 
 	return storage.SeriesRef(seriesRef), nil
@@ -430,8 +442,8 @@ func (*transaction) SetOptions(_ *storage.AppendOptions) {
 	// TODO: implement this func
 }
 
-func (t *transaction) getSeriesRef(ls labels.Labels, mtype pmetric.MetricType) uint64 {
-	hash, bufBytes := getSeriesRefWithoutScopeLabels(t.bufBytes, ls, mtype)
+func (t *transaction) getSeriesRef(ls labels.Labels, mtype pmetric.MetricType, hasScopeAttrs bool) uint64 {
+	hash, bufBytes := getSeriesRefWithoutScopeLabelsFast(t.bufBytes, ls, mtype, hasScopeAttrs)
 	t.bufBytes = bufBytes
 	return hash
 }
@@ -501,8 +513,17 @@ func (t *transaction) getMetrics() (pmetric.Metrics, error) {
 }
 
 func getScopeID(ls labels.Labels) (scopeID, pcommon.Map) {
+	scope, attrs, hasScopeAttrs := getScopeIDWithAttrs(ls)
+	if !hasScopeAttrs {
+		return scope, pcommon.NewMap()
+	}
+	return scope, attrs
+}
+
+func getScopeIDWithAttrs(ls labels.Labels) (scopeID, pcommon.Map, bool) {
 	var scope scopeID
-	attrs := pcommon.NewMap()
+	var attrs pcommon.Map
+	hasScopeAttrs := false
 	ls.Range(func(lbl labels.Label) {
 		switch lbl.Name {
 		case prometheus.ScopeNameLabelKey:
@@ -518,11 +539,17 @@ func getScopeID(ls labels.Labels) (scopeID, pcommon.Map) {
 		if !strings.HasPrefix(lbl.Name, prometheus.ScopeLabelPrefix) {
 			return
 		}
+		if !hasScopeAttrs {
+			attrs = pcommon.NewMap()
+			hasScopeAttrs = true
+		}
 		attrKey := strings.TrimPrefix(lbl.Name, prometheus.ScopeLabelPrefix)
 		attrs.PutStr(attrKey, lbl.Value)
 	})
-	scope.attrsHash = pdatautil.MapHash(attrs)
-	return scope, attrs
+	if hasScopeAttrs {
+		scope.attrsHash = pdatautil.MapHash(attrs)
+	}
+	return scope, attrs, hasScopeAttrs
 }
 
 func (t *transaction) addScopeAttributesFromLabels(key resourceKey, scope scopeID, attrs pcommon.Map) {
@@ -676,5 +703,22 @@ func (t *transaction) addScopeInfo(key resourceKey, ls labels.Labels) {
 }
 
 func getSeriesRefWithoutScopeLabels(bytes []byte, ls labels.Labels, mtype pmetric.MetricType) (uint64, []byte) {
+	return getSeriesRefWithoutScopeLabelsFast(bytes, ls, mtype, hasScopeAttrs(ls))
+}
+
+func getSeriesRefWithoutScopeLabelsFast(bytes []byte, ls labels.Labels, mtype pmetric.MetricType, hasScopeAttrs bool) (uint64, []byte) {
+	if !hasScopeAttrs {
+		return ls.HashWithoutLabels(bytes, getSortedNotUsefulLabels(mtype)...)
+	}
 	return ls.HashWithoutLabels(bytes, getSortedNotUsefulLabelsForSeries(mtype, ls)...)
+}
+
+func hasScopeAttrs(ls labels.Labels) bool {
+	hasScopeAttrs := false
+	ls.Range(func(lbl labels.Label) {
+		if strings.HasPrefix(lbl.Name, prometheus.ScopeLabelPrefix) {
+			hasScopeAttrs = true
+		}
+	})
+	return hasScopeAttrs
 }
