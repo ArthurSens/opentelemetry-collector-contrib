@@ -52,7 +52,7 @@ type metricGroup struct {
 	hasValue       bool
 	hValue         *histogram.Histogram
 	fhValue        *histogram.FloatHistogram
-	complexValue   []*dataPoint
+	complexValue   []dataPoint
 	complexOrdered bool
 	exemplars      pmetric.ExemplarSlice
 	isNHCB         bool // true if this is a Native Histogram Custom Buckets (schema -53)
@@ -491,7 +491,7 @@ func (mf *metricFamily) addSeries(seriesRef uint64, metricName string, ls labels
 			if mg.complexOrdered && len(mg.complexValue) > 0 && boundary < mg.complexValue[len(mg.complexValue)-1].boundary {
 				mg.complexOrdered = false
 			}
-			mg.complexValue = append(mg.complexValue, &dataPoint{value: v, boundary: boundary})
+			mg.complexValue = append(mg.complexValue, dataPoint{value: v, boundary: boundary})
 		}
 	case pmetric.MetricTypeExponentialHistogram:
 		if metricName == mf.metadata.MetricFamily+metricSuffixCreated {
