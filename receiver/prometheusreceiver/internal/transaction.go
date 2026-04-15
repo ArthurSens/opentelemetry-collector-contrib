@@ -53,6 +53,10 @@ type transaction struct {
 	addingNHCB            bool // true if the last sample was a NHCB.
 	ctx                   context.Context
 	families              map[resourceKey]map[scopeID]map[metricFamilyKey]*metricFamily
+	lastFamilyScopeKey    resourceKey
+	lastFamilyScopeID     scopeID
+	lastFamilyScope       map[metricFamilyKey]*metricFamily
+	hasLastFamilyScope    bool
 	mc                    scrape.MetricMetadataStore
 	sink                  consumer.Metrics
 	externalLabels        labels.Labels
@@ -225,40 +229,51 @@ func (t *transaction) detectAndStoreNativeHistogramStaleness(atMs int64, key *re
 	return true
 }
 
-// getOrCreateMetricFamily returns the metric family for the given metric name and scope,
-// and true if an existing family was found.
-func (t *transaction) getOrCreateMetricFamily(key resourceKey, scope scopeID, mn string) *metricFamily {
-	if _, ok := t.families[key]; !ok {
-		t.families[key] = make(map[scopeID]map[metricFamilyKey]*metricFamily)
-	}
-	if _, ok := t.families[key][scope]; !ok {
-		t.families[key][scope] = make(map[metricFamilyKey]*metricFamily)
-	}
-
-	mfKey := metricFamilyKey{isExponentialHistogram: t.addingNativeHistogram, name: mn}
-
-	curMf, ok := t.families[key][scope][mfKey]
-
-	if !ok {
-		fn := mn
-		if _, ok := t.mc.GetMetadata(mn); !ok {
-			fn = normalizeMetricName(mn)
-			// NB (eriksywu): see https://github.com/prometheus/prometheus/issues/14823
-			if isCounterCreatedLine(mn, fn, t.mc) {
-				fn += metricSuffixTotal
-			}
-			// END NB (eriksywu)
+// getOrCreateMetricFamily returns the metric family for the given metric name and scope, creating it if it doesn't exist.
+func (t *transaction) getOrCreateMetricFamily(key resourceKey, scope scopeID, metricName string) *metricFamily {
+	familiesByScope := t.lastFamilyScope
+	if !t.hasLastFamilyScope || t.lastFamilyScopeKey != key || t.lastFamilyScopeID != scope {
+		familiesByResource, ok := t.families[key]
+		if !ok {
+			familiesByResource = make(map[scopeID]map[metricFamilyKey]*metricFamily)
+			t.families[key] = familiesByResource
 		}
-		fnKey := metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: fn}
-		mf, ok := t.families[key][scope][fnKey]
-		if !ok || !mf.includesMetric(mn) {
-			curMf = newMetricFamily(mn, t.mc, t.logger, t.addingNativeHistogram, t.addingNHCB)
-			t.families[key][scope][metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: curMf.name}] = curMf
-			return curMf
+		familiesByScope, ok = familiesByResource[scope]
+		if !ok {
+			familiesByScope = make(map[metricFamilyKey]*metricFamily)
+			familiesByResource[scope] = familiesByScope
 		}
-		curMf = mf
+		t.lastFamilyScopeKey = key
+		t.lastFamilyScopeID = scope
+		t.lastFamilyScope = familiesByScope
+		t.hasLastFamilyScope = true
 	}
-	return curMf
+
+	mfKey := metricFamilyKey{isExponentialHistogram: t.addingNativeHistogram, name: metricName}
+
+	curMf, ok := familiesByScope[mfKey]
+	if ok {
+		return curMf
+	}
+
+	familyName := metricName
+	if _, ok := t.mc.GetMetadata(metricName); !ok {
+		familyName = normalizeMetricName(metricName)
+		// NB (eriksywu): see https://github.com/prometheus/prometheus/issues/14823
+		if isCounterCreatedLine(metricName, familyName, t.mc) {
+			familyName += metricSuffixTotal
+		}
+		// END NB (eriksywu)
+	}
+	fnKey := metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: familyName}
+	mf, ok := familiesByScope[fnKey]
+	if !ok || !mf.includesMetric(metricName) {
+		curMf = newMetricFamily(metricName, t.mc, t.logger, t.addingNativeHistogram, t.addingNHCB)
+		familiesByScope[metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: curMf.name}] = curMf
+		return curMf
+	}
+
+	return mf
 }
 
 func (t *transaction) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
