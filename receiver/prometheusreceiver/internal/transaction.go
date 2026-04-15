@@ -56,6 +56,10 @@ type transaction struct {
 	targetJob             string
 	targetInstance        string
 	families              map[resourceKey]map[scopeID]map[metricFamilyKey]*metricFamily
+	lastFamilyScopeKey    resourceKey
+	lastFamilyScopeID     scopeID
+	lastFamilyScope       map[metricFamilyKey]*metricFamily
+	hasLastFamilyScope    bool
 	mc                    scrape.MetricMetadataStore
 	sink                  consumer.Metrics
 	externalLabels        labels.Labels
@@ -237,15 +241,22 @@ func (t *transaction) detectAndStoreNativeHistogramStalenessWithScopeAttrs(atMs 
 // getOrCreateMetricFamily returns the metric family for the given metric name and scope,
 // and true if an existing family was found.
 func (t *transaction) getOrCreateMetricFamily(key resourceKey, scope scopeID, mn string) *metricFamily {
-	familiesByResource, ok := t.families[key]
-	if !ok {
-		familiesByResource = make(map[scopeID]map[metricFamilyKey]*metricFamily)
-		t.families[key] = familiesByResource
-	}
-	familiesByScope, ok := familiesByResource[scope]
-	if !ok {
-		familiesByScope = make(map[metricFamilyKey]*metricFamily)
-		familiesByResource[scope] = familiesByScope
+	familiesByScope := t.lastFamilyScope
+	if !t.hasLastFamilyScope || t.lastFamilyScopeKey != key || t.lastFamilyScopeID != scope {
+		familiesByResource, ok := t.families[key]
+		if !ok {
+			familiesByResource = make(map[scopeID]map[metricFamilyKey]*metricFamily)
+			t.families[key] = familiesByResource
+		}
+		familiesByScope, ok = familiesByResource[scope]
+		if !ok {
+			familiesByScope = make(map[metricFamilyKey]*metricFamily)
+			familiesByResource[scope] = familiesByScope
+		}
+		t.lastFamilyScopeKey = key
+		t.lastFamilyScopeID = scope
+		t.lastFamilyScope = familiesByScope
+		t.hasLastFamilyScope = true
 	}
 
 	mfKey := metricFamilyKey{isExponentialHistogram: t.addingNativeHistogram, name: mn}
