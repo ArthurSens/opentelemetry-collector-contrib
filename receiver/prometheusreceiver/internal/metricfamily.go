@@ -26,11 +26,12 @@ import (
 type metricFamily struct {
 	mtype pmetric.MetricType
 	// isMonotonic only applies to sums
-	isMonotonic bool
-	groups      map[uint64]*metricGroup
-	name        string
-	metadata    *scrape.MetricMetadata
-	groupOrders []*metricGroup
+	isMonotonic      bool
+	groups           map[uint64]*metricGroup
+	name             string
+	createdMetricName string
+	metadata         *scrape.MetricMetadata
+	groupOrders      []*metricGroup
 }
 
 // metricGroup, represents a single metric of a metric family. for example a histogram metric is usually represent by
@@ -72,11 +73,12 @@ func newMetricFamilyWithMetadata(metadata *scrape.MetricMetadata, familyName str
 	}
 
 	return &metricFamily{
-		mtype:       mtype,
-		isMonotonic: isMonotonic,
-		groups:      make(map[uint64]*metricGroup),
-		name:        familyName,
-		metadata:    &metadataCopy,
+		mtype:             mtype,
+		isMonotonic:       isMonotonic,
+		groups:            make(map[uint64]*metricGroup),
+		name:              familyName,
+		createdMetricName: metadataCopy.MetricFamily + metricSuffixCreated,
+		metadata:          &metadataCopy,
 	}
 }
 
@@ -486,7 +488,7 @@ func (mf *metricFamily) addSeries(seriesRef uint64, metricName string, ls labels
 			mg.ts = t
 			mg.count = v
 			mg.hasCount = true
-		case metricName == mf.metadata.MetricFamily+metricSuffixCreated:
+		case metricName == mf.createdMetricName:
 			mg.createdSeconds = v
 		default:
 			boundary, err := getBoundary(mf.mtype, ls)
@@ -499,11 +501,11 @@ func (mf *metricFamily) addSeries(seriesRef uint64, metricName string, ls labels
 			mg.complexValue = append(mg.complexValue, dataPoint{value: v, boundary: boundary})
 		}
 	case pmetric.MetricTypeExponentialHistogram:
-		if metricName == mf.metadata.MetricFamily+metricSuffixCreated {
+		if metricName == mf.createdMetricName {
 			mg.createdSeconds = v
 		}
 	case pmetric.MetricTypeSum:
-		if metricName == mf.metadata.MetricFamily+metricSuffixCreated {
+		if metricName == mf.createdMetricName {
 			mg.createdSeconds = v
 		} else {
 			mg.value = v
