@@ -28,6 +28,16 @@ const (
 	numSeries = 10000
 )
 
+var benchmarkMetricFamilyScenarios = []struct {
+	name              string
+	metricFamilyCount int
+}{
+	{name: "MetricFamilies10000", metricFamilyCount: numSeries},
+	{name: "MetricFamilies100", metricFamilyCount: 100},
+	{name: "MetricFamilies10", metricFamilyCount: 10},
+	{name: "MetricFamilies1", metricFamilyCount: 1},
+}
+
 var (
 	benchTarget = scrape.NewTarget(
 		labels.FromMap(map[string]string{
@@ -48,11 +58,15 @@ var (
 // BenchmarkAppend benchmarks the Append method of the transaction.
 // It tests the performance of appending classic metric types (counters, gauges, summaries, histograms).
 func BenchmarkAppend(b *testing.B) {
-	benchmarkAppend(b)
+	for _, scenario := range benchmarkMetricFamilyScenarios {
+		b.Run(scenario.name, func(b *testing.B) {
+			benchmarkAppend(b, scenario.metricFamilyCount)
+		})
+	}
 }
 
-func benchmarkAppend(b *testing.B) {
-	labelSets := generateLabelSets(numSeries, 50)
+func benchmarkAppend(b *testing.B, metricFamilyCount int) {
+	labelSets := generateLabelSets(numSeries, 50, metricFamilyCount)
 	timestamp := int64(1234567890)
 
 	b.ResetTimer()
@@ -74,11 +88,15 @@ func benchmarkAppend(b *testing.B) {
 // BenchmarkAppendHistogram benchmarks the AppendHistogram method of the transaction.
 // It tests the performance of appending native histogram metrics.
 func BenchmarkAppendHistogram(b *testing.B) {
-	benchmarkAppendHistogram(b)
+	for _, scenario := range benchmarkMetricFamilyScenarios {
+		b.Run(scenario.name, func(b *testing.B) {
+			benchmarkAppendHistogram(b, scenario.metricFamilyCount)
+		})
+	}
 }
 
-func benchmarkAppendHistogram(b *testing.B) {
-	labelSets := generateLabelSets(numSeries, 50)
+func benchmarkAppendHistogram(b *testing.B, metricFamilyCount int) {
+	labelSets := generateLabelSets(numSeries, 50, metricFamilyCount)
 	histograms := generateNativeHistograms(numSeries)
 	timestamp := int64(1234567890)
 
@@ -133,7 +151,7 @@ func BenchmarkCommit(b *testing.B) {
 }
 
 func benchmarkCommit(b *testing.B, useNativeHistograms, withTargetInfo, withScopeInfo bool) {
-	labelSets := generateLabelSets(numSeries, 50)
+	labelSets := generateLabelSets(numSeries, 50, numSeries)
 	var histograms []*histogram.Histogram
 	if useNativeHistograms {
 		histograms = generateNativeHistograms(numSeries)
@@ -207,13 +225,14 @@ func newBenchmarkTransaction(b *testing.B) *transaction {
 	return tx
 }
 
-// generateLabelSets creates label sets for benchmarking with the specified cardinality.
-func generateLabelSets(seriesCount, cardinality int) []labels.Labels {
+// generateLabelSets creates label sets for benchmarking with the specified label cardinality
+// and metric family cardinality.
+func generateLabelSets(seriesCount, cardinality, metricFamilyCount int) []labels.Labels {
 	result := make([]labels.Labels, seriesCount)
 
 	for i := range seriesCount {
 		lbls := labels.NewBuilder(labels.EmptyLabels())
-		lbls.Set(model.MetricNameLabel, fmt.Sprintf("metric_%d", i))
+		lbls.Set(model.MetricNameLabel, fmt.Sprintf("metric_%d", i%metricFamilyCount))
 
 		for j := range cardinality {
 			lbls.Set(fmt.Sprintf("label_%d", j), fmt.Sprintf("value_%d_%d", i, j))
