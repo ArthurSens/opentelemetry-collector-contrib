@@ -602,15 +602,7 @@ func (t *transaction) initTransaction(lbs labels.Labels) (*resourceKey, error) {
 
 func (t *transaction) getJobAndInstance(lbs labels.Labels) (*resourceKey, error) {
 	// first, try to get job and instance from the labels
-	var job, instance string
-	lbs.Range(func(lbl labels.Label) {
-		switch lbl.Name {
-		case model.JobLabel:
-			job = lbl.Value
-		case model.InstanceLabel:
-			instance = lbl.Value
-		}
-	})
+	job, instance := lbs.Get(model.JobLabel), lbs.Get(model.InstanceLabel)
 	if job != "" && instance != "" {
 		return &resourceKey{
 			job:      job,
