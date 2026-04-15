@@ -237,36 +237,31 @@ func (t *transaction) detectAndStoreNativeHistogramStalenessWithScopeAttrs(atMs 
 // getOrCreateMetricFamily returns the metric family for the given metric name and scope,
 // and true if an existing family was found.
 func (t *transaction) getOrCreateMetricFamily(key resourceKey, scope scopeID, mn string) *metricFamily {
-	if _, ok := t.families[key]; !ok {
-		t.families[key] = make(map[scopeID]map[metricFamilyKey]*metricFamily)
+	familiesByResource, ok := t.families[key]
+	if !ok {
+		familiesByResource = make(map[scopeID]map[metricFamilyKey]*metricFamily)
+		t.families[key] = familiesByResource
 	}
-	if _, ok := t.families[key][scope]; !ok {
-		t.families[key][scope] = make(map[metricFamilyKey]*metricFamily)
+	familiesByScope, ok := familiesByResource[scope]
+	if !ok {
+		familiesByScope = make(map[metricFamilyKey]*metricFamily)
+		familiesByResource[scope] = familiesByScope
 	}
 
 	mfKey := metricFamilyKey{isExponentialHistogram: t.addingNativeHistogram, name: mn}
 
-	curMf, ok := t.families[key][scope][mfKey]
-
-	if !ok {
-		fn := mn
-		if _, ok := t.mc.GetMetadata(mn); !ok {
-			fn = normalizeMetricName(mn)
-			// NB (eriksywu): see https://github.com/prometheus/prometheus/issues/14823
-			if isCounterCreatedLine(mn, fn, t.mc) {
-				fn += metricSuffixTotal
-			}
-			// END NB (eriksywu)
-		}
-		fnKey := metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: fn}
-		mf, ok := t.families[key][scope][fnKey]
-		if !ok || !mf.includesMetric(mn) {
-			curMf = newMetricFamily(mn, t.mc, t.logger, t.addingNativeHistogram, t.addingNHCB)
-			t.families[key][scope][metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: curMf.name}] = curMf
-			return curMf
-		}
-		curMf = mf
+	if curMf, ok := familiesByScope[mfKey]; ok {
+		return curMf
 	}
+
+	metadata, familyName := metadataForMetric(mn, t.mc)
+	fnKey := metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: familyName}
+	if mf, ok := familiesByScope[fnKey]; ok && mf.includesMetric(mn) {
+		return mf
+	}
+
+	curMf := newMetricFamilyWithMetadata(metadata, familyName, t.logger, t.addingNativeHistogram, t.addingNHCB)
+	familiesByScope[metricFamilyKey{isExponentialHistogram: mfKey.isExponentialHistogram, name: curMf.name}] = curMf
 	return curMf
 }
 

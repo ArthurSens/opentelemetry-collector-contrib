@@ -58,17 +58,17 @@ type metricGroup struct {
 	isNHCB         bool // true if this is a Native Histogram Custom Buckets (schema -53)
 }
 
-func newMetricFamily(metricName string, mc scrape.MetricMetadataStore, logger *zap.Logger, isNativeHistogram, isNHCB bool) *metricFamily {
-	metadata, familyName := metadataForMetric(metricName, mc)
+func newMetricFamilyWithMetadata(metadata *scrape.MetricMetadata, familyName string, logger *zap.Logger, isNativeHistogram, isNHCB bool) *metricFamily {
+	metadataCopy := *metadata
 	// Native histograms have intrinsic metric type, use it,
 	// regardless of what metadata says.
 	if isNativeHistogram {
-		metadata.Type = model.MetricTypeHistogram
+		metadataCopy.Type = model.MetricTypeHistogram
 	}
 
-	mtype, isMonotonic := convToMetricType(metadata.Type, isNativeHistogram && !isNHCB)
+	mtype, isMonotonic := convToMetricType(metadataCopy.Type, isNativeHistogram && !isNHCB)
 	if mtype == pmetric.MetricTypeEmpty {
-		logger.Debug(fmt.Sprintf("Unknown-typed metric : %s %+v", metricName, metadata))
+		logger.Debug(fmt.Sprintf("Unknown-typed metric : %s %+v", familyName, metadataCopy))
 	}
 
 	return &metricFamily{
@@ -76,8 +76,13 @@ func newMetricFamily(metricName string, mc scrape.MetricMetadataStore, logger *z
 		isMonotonic: isMonotonic,
 		groups:      make(map[uint64]*metricGroup),
 		name:        familyName,
-		metadata:    metadata,
+		metadata:    &metadataCopy,
 	}
+}
+
+func newMetricFamily(metricName string, mc scrape.MetricMetadataStore, logger *zap.Logger, isNativeHistogram, isNHCB bool) *metricFamily {
+	metadata, familyName := metadataForMetric(metricName, mc)
+	return newMetricFamilyWithMetadata(metadata, familyName, logger, isNativeHistogram, isNHCB)
 }
 
 // includesMetric returns true if the metric is part of the family
